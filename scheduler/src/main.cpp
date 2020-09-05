@@ -516,9 +516,6 @@ remove_job_request(const JobRequestPosition & pos)
     }
 }
 
-std::string
-dump_job(Job * job);
-
 bool
 handle_cs_request(MsgChannel * cs, Msg * _m)
 {
@@ -1448,231 +1445,6 @@ handle_blacklist_host_env(CompileServer * cs, Msg * _m)
     return true;
 }
 
-std::string
-dump_job(Job * job)
-{
-    char        buffer[1000];
-    std::string line;
-
-    std::string jobState;
-    switch (job->state()) {
-        case Job::PENDING: jobState = "PEND"; break;
-        case Job::WAITINGFORCS: jobState = "WAIT"; break;
-        case Job::COMPILING: jobState = "COMP"; break;
-        default: jobState = "Huh?";
-    }
-    snprintf(buffer,
-             sizeof(buffer),
-             "%u %s sub:%s on:%s ",
-             job->id(),
-             jobState.c_str(),
-             job->submitter() ? job->submitter()->nodeName().c_str() : "<>",
-             job->server() ? job->server()->nodeName().c_str() : "<unknown>");
-    buffer[sizeof(buffer) - 1] = 0;
-    line = buffer;
-    line = line + job->fileName();
-    return line;
-}
-
-/* Splits the std::string S between characters in SET and add them to list L. */
-void
-split_string(const std::string &      s,
-             const char *             set,
-             std::list<std::string> & l)
-{
-    std::string::size_type end = 0;
-
-    const auto npos = std::string::npos;
-
-    while (end != npos) {
-        auto start = s.find_first_not_of(set, end);
-
-        if (start == npos) {
-            break;
-        }
-
-        end = s.find_first_of(set, start);
-
-        /* Do we really need to check end here or is the subtraction
-           defined on every platform correctly (with GCC it's ensured,
-        that (npos - start) is the rest of the string).  */
-        if (end != npos) {
-            l.push_back(s.substr(start, end - start));
-        } else {
-            l.push_back(s.substr(start));
-        }
-    }
-}
-
-bool
-handle_control_login(CompileServer * cs)
-{
-    cs->setType(CompileServer::LINE);
-    cs->last_talk = time(nullptr);
-    cs->setBulkTransfer();
-    cs->setState(CompileServer::LOGGEDIN);
-    assert(find(controls.begin(), controls.end(), cs) == controls.end());
-    controls.push_back(cs);
-
-    std::ostringstream o;
-    o << "200-ICECC " VERSION ": " << time(nullptr) - starttime << "s uptime, "
-      << css.size() << " hosts, " << jobs.size() << " jobs in queue "
-      << "(" << new_job_id << " total)." << std::endl;
-    o << "200 Use 'help' for help and 'quit' to quit." << std::endl;
-    return cs->send_msg(TextMsg(o.str()));
-}
-
-bool
-handle_line(CompileServer * cs, Msg * _m)
-{
-    TextMsg * m = dynamic_cast<TextMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
-    std::string            line;
-    std::list<std::string> l;
-    split_string(m->text, " \t\n", l);
-    std::string cmd;
-
-    cs->last_talk = time(nullptr);
-
-    if (l.empty()) {
-        cmd = "";
-    } else {
-        cmd = l.front();
-        l.pop_front();
-        transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
-    }
-
-    if (cmd == "listcs") {
-        for (CompileServer * const it : css) {
-            char buffer[1000];
-            sprintf(buffer, " (%s:%u) ", it->name.c_str(), it->remotePort());
-            line = " " + it->nodeName() + buffer;
-            line += "[" + it->hostPlatform() + "] speed=";
-            sprintf(buffer,
-                    "%.2f jobs=%d/%d load=%u",
-                    server_speed(it),
-                    (int)it->jobList().size(),
-                    it->maxJobs(),
-                    it->load());
-            line += buffer;
-
-            if (it->busyInstalling()) {
-                sprintf(buffer,
-                        " busy installing since %ld s",
-                        time(nullptr) - it->busyInstalling());
-                line += buffer;
-            }
-
-            if (!cs->send_msg(TextMsg(line))) {
-                return false;
-            }
-
-            std::list<Job *> jobList = it->jobList();
-            for (auto it2 = jobList.begin(); it2 != jobList.end(); ++it2) {
-                if (!cs->send_msg(TextMsg("   " + dump_job(*it2)))) {
-                    return false;
-                }
-            }
-        }
-    } else if (cmd == "listblocks") {
-        for (auto it = block_css.begin(); it != block_css.end(); ++it) {
-            if (!cs->send_msg(TextMsg("   " + (*it)))) {
-                return false;
-            }
-        }
-    } else if (cmd == "listjobs") {
-        for (auto it = jobs.begin(); it != jobs.end(); ++it)
-            if (!cs->send_msg(TextMsg(" " + dump_job(it->second)))) {
-                return false;
-            }
-    } else if (cmd == "quit" || cmd == "exit") {
-        handle_end(cs, nullptr);
-        return false;
-    } else if (cmd == "removecs" || cmd == "blockcs") {
-        if (l.empty()) {
-            if (!cs->send_msg(TextMsg("401 Sure. But which hosts?"))) {
-                return false;
-            }
-        } else {
-            for (auto si = l.begin(); si != l.end(); ++si) {
-                if (cmd == "blockcs")
-                    block_css.push_back(*si);
-                for (CompileServer * const it : css) {
-                    if (it->matches(*si)) {
-                        if (cs->send_msg(TextMsg("removing host " + *si))) {
-                            handle_end(it, nullptr);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-    } else if (cmd == "unblockcs") {
-        if (l.empty()) {
-            if (!cs->send_msg(TextMsg("401 Sure. But which host?")))
-                return false;
-        } else {
-            for (auto si = l.begin(); si != l.end(); ++si) {
-                for (auto it = block_css.begin(); it != block_css.end(); ++it) {
-                    if (*si == *it) {
-                        block_css.erase(it);
-                        break;
-                    }
-                }
-            }
-        }
-    } else if (cmd == "internals") {
-        for (auto it = css.begin(); it != css.end(); ++it) {
-            Msg * msg = nullptr;
-
-            auto * const candidate = *it;
-            if (std::any_of(
-                    l.begin(), l.end(), [candidate](const std::string & x) {
-                        return candidate->matches(x);
-                    })) {
-                continue;
-            }
-
-            if (candidate->send_msg(GetInternalStatus())) {
-                msg = candidate->get_msg();
-            }
-
-            if (msg && msg->type == M_STATUS_TEXT) {
-                if (!cs->send_msg(
-                        TextMsg(dynamic_cast<StatusTextMsg *>(msg)->text))) {
-                    return false;
-                }
-            } else {
-                if (!cs->send_msg(
-                        TextMsg(candidate->nodeName() + " not reporting\n"))) {
-                    return false;
-                }
-            }
-
-            delete msg;
-        }
-    } else if (cmd == "help") {
-        if (!cs->send_msg(TextMsg("listcs\nlistblocks\nlistjobs\nremovecs\nbloc"
-                                  "kcs\nunblockcs\ninternals\nhelp\nquit"))) {
-            return false;
-        }
-    } else {
-        std::string txt = "Invalid command '";
-        txt += m->text;
-        txt += "'";
-
-        if (!cs->send_msg(TextMsg(txt))) {
-            return false;
-        }
-    }
-
-    return cs->send_msg(TextMsg("200 done"));
-}
-
 // return false if some error occurred, leaves C open.  */
 bool
 try_login(CompileServer * cs, Msg * m)
@@ -1794,11 +1566,6 @@ handle_end(CompileServer * toremove, Msg * m)
             }
 
             break;
-        case CompileServer::LINE:
-            toremove->send_msg(TextMsg("200 Good Bye!"));
-            controls.remove(toremove);
-
-            break;
         default: trace() << "remote end had UNKNOWN type?" << std::endl; break;
     }
 
@@ -1837,7 +1604,9 @@ handle_activity(CompileServer * cs)
         case M_JOB_LOCAL_BEGIN: ret = handle_local_job(cs, m); break;
         case M_JOB_LOCAL_DONE: ret = handle_local_job_done(cs, m); break;
         case M_LOGIN: ret = handle_relogin(cs, m); break;
-        case M_TEXT: ret = handle_line(cs, m); break;
+        case M_TEXT_DEPRECATED:
+            log_warning() << "Received deprecated TextMsg\n";
+            break;
         case M_GET_CS: ret = handle_cs_request(cs, m); break;
         case M_BLACKLIST_HOST_ENV:
             ret = handle_blacklist_host_env(cs, m);
@@ -2022,7 +1791,9 @@ handle_scheduler_announce(const char *       buf,
 int
 main(int argc, char * argv[])
 {
-    int                listen_fd, remote_fd, broad_fd, text_fd;
+    int                listen_fd;
+    int                remote_fd;
+    int                broad_fd;
     struct sockaddr_in remote_addr;
     socklen_t          remote_len;
     const char *       netname = "ICECREAM";
@@ -2211,12 +1982,6 @@ main(int argc, char * argv[])
         return 1;
     }
 
-    text_fd = open_tcp_listener(scheduler_port + 1, scheduler_interface);
-
-    if (text_fd < 0) {
-        return 1;
-    }
-
     broad_fd = open_broad_listener(scheduler_port, scheduler_interface);
 
     if (broad_fd < 0) {
@@ -2278,10 +2043,6 @@ main(int argc, char * argv[])
 
         if (time(nullptr) >= next_listen) {
             pfd.fd = listen_fd;
-            pfd.events = POLLIN;
-            pollfds.push_back(pfd);
-
-            pfd.fd = text_fd;
             pfd.events = POLLIN;
             pollfds.push_back(pfd);
         }
@@ -2358,11 +2119,8 @@ main(int argc, char * argv[])
                 }
 
                 if (remote_fd >= 0) {
-                    CompileServer * cs =
-                        new CompileServer(remote_fd,
-                                          (struct sockaddr *)&remote_addr,
-                                          remote_len,
-                                          false);
+                    CompileServer * cs = new CompileServer(
+                        remote_fd, (struct sockaddr *)&remote_addr, remote_len);
                     trace() << "accepted " << cs->name << std::endl;
                     cs->last_talk = time(nullptr);
 
@@ -2382,38 +2140,6 @@ main(int argc, char * argv[])
             }
 
             next_listen = time(nullptr) + 1;
-        }
-
-        if (active_fds && pollfd_is_set(pollfds, text_fd, POLLIN)) {
-            active_fds--;
-            remote_len = sizeof(remote_addr);
-            remote_fd =
-                accept(text_fd, (struct sockaddr *)&remote_addr, &remote_len);
-
-            if (remote_fd < 0 && errno != EAGAIN && errno != EINTR) {
-                log_perror("accept()");
-                /* Don't quit the scheduler just because a debugger couldn't
-                   connect.  */
-            }
-
-            if (remote_fd >= 0) {
-                CompileServer * cs =
-                    new CompileServer(remote_fd,
-                                      (struct sockaddr *)&remote_addr,
-                                      remote_len,
-                                      true);
-                fd2cs[cs->fd] = cs;
-
-                if (!handle_control_login(cs)) {
-                    handle_end(cs, nullptr);
-                    continue;
-                }
-
-                while (!cs->read_a_bit() || cs->has_msg())
-                    if (!handle_activity(cs)) {
-                        break;
-                    }
-            }
         }
 
         if (active_fds && pollfd_is_set(pollfds, broad_fd, POLLIN)) {
