@@ -21,8 +21,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef _ICECREAM_TEMPFILE_H_
-#define _ICECREAM_TEMPFILE_H_
+#ifndef _TEMPFILE_H_
+#define _TEMPFILE_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,4 +40,4 @@ dcc_make_tmpdir(char ** name_ret);
 }
 #endif
 
-#endif
+#endif // _TEMPFILE_H_

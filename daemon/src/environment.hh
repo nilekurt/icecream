@@ -21,10 +21,10 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef ICECREAM_ENVIRONMENT_H
-#define ICECREAM_ENVIRONMENT_H
+#ifndef _ENVIRONMENT_HH_
+#define _ENVIRONMENT_HH_
 
-#include "comm.h"
+#include "comm.hh"
 
 #include <list>
 #include <string>
@@ -90,4 +90,4 @@ verify_env(MsgChannel *        c,
            uid_t               user_uid,
            gid_t               user_gid);
 
-#endif
+#endif // _ENVIRONMENT_HH_

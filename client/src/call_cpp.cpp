@@ -27,12 +27,12 @@
  * Run the preprocessor.  Client-side only.
  **/
 
-#include "call_cpp.h"
+#include "call_cpp.hh"
 
-#include "client_util.h"
-#include "local.h"
-#include "logging.h"
-#include "safeguard.h"
+#include "client_util.hh"
+#include "local.hh"
+#include "logging.hh"
+#include "safeguard.hh"
 
 namespace {
 

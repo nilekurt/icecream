@@ -22,9 +22,9 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "scheduler_job.h"
+#include "scheduler_job.hh"
 
-#include "compileserver.h"
+#include "compileserver.hh"
 
 Job::Job(const unsigned int id, CompileServer * subm)
     : m_id(id),

@@ -39,17 +39,16 @@
 #define _GNU_SOURCE
 #endif
 
-#include "arg.h"
+#include "arg.hh"
 #include "argv.h"
-#include "client_util.h"
-#include "comm.h"
+#include "client_util.hh"
 #include "errors.h"
 #include "exitcode.h"
-#include "local.h"
-#include "logging.h"
-#include "platform.h"
-#include "remote.h"
-#include "safeguard.h"
+#include "local.hh"
+#include "logging.hh"
+#include "platform.hh"
+#include "remote.hh"
+#include "safeguard.hh"
 
 extern "C" {
 #include <sys/resource.h>

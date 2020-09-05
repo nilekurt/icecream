@@ -19,8 +19,8 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef ICECREAM_FILE_UTIL_H
-#define ICECREAM_FILE_UTIL_H
+#ifndef _FILE_UTIL_HH_
+#define _FILE_UTIL_HH_
 
 #include <string>
 #include <vector>
@@ -38,4 +38,4 @@ mkpath(const std::string & path);
 bool
 rmpath(const char * path);
 
-#endif
+#endif // _FILE_UTIL_HH_

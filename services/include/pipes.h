@@ -19,8 +19,8 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef ICECREAM_PIPES_H
-#define ICECREAM_PIPES_H
+#ifndef _PIPES_H_
+#define _PIPES_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,4 +34,4 @@ create_large_pipe(int pipefd[2]);
 }
 #endif
 
-#endif
+#endif // _PIPES_H_

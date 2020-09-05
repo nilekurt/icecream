@@ -22,11 +22,11 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef COMPILESERVER_H
-#define COMPILESERVER_H
+#ifndef _COMPILESERVER_HH_
+#define _COMPILESERVER_HH_
 
-#include "comm.h"
-#include "jobstat.h"
+#include "comm.hh"
+#include "jobstat.hh"
 
 #include <list>
 #include <map>
@@ -264,4 +264,4 @@ private:
     bool         m_acceptingInConnection;
 };
 
-#endif
+#endif // _COMPILESERVER_HH_

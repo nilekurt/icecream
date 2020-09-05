@@ -22,11 +22,11 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "compileserver.h"
+#include "compileserver.hh"
 
-#include "logging.h"
-#include "scheduler_job.h"
-#include "services_job.h"
+#include "logging.hh"
+#include "scheduler_job.hh"
+#include "services_job.hh"
 
 extern "C" {
 #include <fcntl.h>

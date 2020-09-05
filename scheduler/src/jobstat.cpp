@@ -22,7 +22,7 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "jobstat.h"
+#include "jobstat.hh"
 
 JobStat::JobStat()
     : m_outputSize(0),

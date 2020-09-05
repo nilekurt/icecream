@@ -20,9 +20,9 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "load.h"
+#include "load.hh"
 
-#include "logging.h"
+#include "logging.hh"
 
 extern "C" {
 #include <fcntl.h>

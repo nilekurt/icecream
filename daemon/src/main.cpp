@@ -27,17 +27,16 @@
 #define _GNU_SOURCE 1
 #endif
 
-#include "comm.h"
-#include "environment.h"
+#include "environment.hh"
 #include "exitcode.h"
-#include "getifaddrs.h"
-#include "load.h"
-#include "logging.h"
+#include "getifaddrs.hh"
+#include "load.hh"
+#include "logging.hh"
 #include "ncpus.h"
-#include "platform.h"
-#include "serve.h"
-#include "services_util.h"
-#include "workit.h"
+#include "platform.hh"
+#include "serve.hh"
+#include "services_util.hh"
+#include "workit.hh"
 
 extern "C" {
 #include <fcntl.h>

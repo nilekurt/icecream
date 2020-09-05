@@ -1,5 +1,5 @@
-#ifndef _SAFEGUARD_H_
-#define _SAFEGUARD_H_
+#ifndef _SAFEGUARD_HH_
+#define _SAFEGUARD_HH_
 
 // We allow several recursions if icerun is involved, just in case icerun is
 // e.g. used to invoke a script that calls make that invokes compilations. In
@@ -23,4 +23,4 @@ dcc_increment_safeguard(SafeguardStep step);
 int
 dcc_recursion_safeguard(void);
 
-#endif // _SAFEGUARD_H_
+#endif // _SAFEGUARD_HH_

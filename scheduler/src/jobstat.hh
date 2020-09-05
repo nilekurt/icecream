@@ -22,8 +22,8 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef JOBSTAT_H
-#define JOBSTAT_H
+#ifndef _JOBSTAT_HH_
+#define _JOBSTAT_HH_
 
 struct JobStat {
 public:
@@ -87,4 +87,4 @@ private:
     unsigned int  m_jobId;
 };
 
-#endif
+#endif // _JOBSTAT_HH_

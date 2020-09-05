@@ -21,8 +21,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef DISTCC_EXITCODE_H
-#define DISTCC_EXITCODE_H
+#ifndef _EXITCODE_H_
+#define _EXITCODE_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,33 +40,35 @@ extern "C" {
  * These need to be in [1,255] so that they can be used as exit()
  * codes.
  **/
-enum dcc_exitcode {
-  EXIT_DISTCC_FAILED = 100, /**< General failure */
-  EXIT_BAD_ARGUMENTS = 101,
-  EXIT_BIND_FAILED = 102,
-  EXIT_CONNECT_FAILED = 103,
-  EXIT_COMPILER_CRASHED = 104,
-  EXIT_OUT_OF_MEMORY = 105,
-  EXIT_BAD_HOSTSPEC = 106,
-  EXIT_IO_ERROR = 107,
-  EXIT_TRUNCATED = 108,
-  EXIT_PROTOCOL_ERROR = 109,
-  EXIT_COMPILER_MISSING = 110, /**< Compiler executable not found */
-  EXIT_RECURSION = 111,        /**< icecc called itself */
-  EXIT_SETUID_FAILED = 112,    /**< Failed to discard privileges */
-  EXIT_ACCESS_DENIED = 113,    /**< Network access denied */
-  EXIT_BUSY = 114,             /**< In use by another process. */
-  EXIT_NO_SUCH_FILE = 115,
-  EXIT_NO_HOSTS = 116,
-  EXIT_GONE = 117, /**< No longer relevant */
-  EXIT_CLIENT_KILLED = 118,
-  EXIT_TEST_SOCKET_ERROR = 119
+enum dcc_exitcode
+{
+    EXIT_DISTCC_FAILED = 100, /**< General failure */
+    EXIT_BAD_ARGUMENTS = 101,
+    EXIT_BIND_FAILED = 102,
+    EXIT_CONNECT_FAILED = 103,
+    EXIT_COMPILER_CRASHED = 104,
+    EXIT_OUT_OF_MEMORY = 105,
+    EXIT_BAD_HOSTSPEC = 106,
+    EXIT_IO_ERROR = 107,
+    EXIT_TRUNCATED = 108,
+    EXIT_PROTOCOL_ERROR = 109,
+    EXIT_COMPILER_MISSING = 110, /**< Compiler executable not found */
+    EXIT_RECURSION = 111, /**< icecc called itself */
+    EXIT_SETUID_FAILED = 112, /**< Failed to discard privileges */
+    EXIT_ACCESS_DENIED = 113, /**< Network access denied */
+    EXIT_BUSY = 114, /**< In use by another process. */
+    EXIT_NO_SUCH_FILE = 115,
+    EXIT_NO_HOSTS = 116,
+    EXIT_GONE = 117, /**< No longer relevant */
+    EXIT_CLIENT_KILLED = 118,
+    EXIT_TEST_SOCKET_ERROR = 119
 };
 
-int shell_exit_status(int status);
+int
+shell_exit_status(int status);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _DISTCC_EXITCODE_H */
+#endif // _EXITCODE_H_
