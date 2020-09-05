@@ -39,8 +39,8 @@ check_c_source_compiles(
 
 unset(CMAKE_REQUIRED_LIBRARIES)
 
-file(GLOB_RECURSE SRC src/*.cpp src/*.c)
-file(GLOB_RECURSE INC include/*.h)
+file(GLOB_RECURSE SRC src/*.c src/*.cpp)
+file(GLOB_RECURSE INC include/*.h include/*.hh)
 
 add_executable(iceccd ${SRC} ${INCLUDE})
 target_compile_options(iceccd PRIVATE ${LIBCAP_NG_CFLAGS})

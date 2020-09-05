@@ -8,7 +8,6 @@ find_library(dl NAMES libdl.a libdl.so REQUIRED)
 check_include_file(ifaddrs.h HAVE_IFADDRS_H)
 check_include_file(netinet/tcp_var.h HAVE_NETINET_TCP_VAR_H)
 
-
 check_c_source_compiles(
     "
     #include <stdlib.h>
@@ -31,8 +30,8 @@ check_c_source_compiles(
     "
     HAVE_IFR_DSTADDR)
 
-file(GLOB_RECURSE SRC src/*.cpp src/*.c)
-file(GLOB_RECURSE INC include/*.h)
+file(GLOB_RECURSE SRC src/*.c src/*.cpp)
+file(GLOB_RECURSE INC include/*.h include/*.hh)
 
 add_library(icecc_la)
 target_sources(icecc_la PRIVATE ${SRC} ${INC})

@@ -30,8 +30,8 @@ check_c_source_compiles(
     "
     HAVE_LOCKF)
 
-file(GLOB_RECURSE SRC src/*.cpp src/*.c)
-file(GLOB_RECURSE INC include/*.h)
+file(GLOB_RECURSE SRC src/*.c src/*.cpp)
+file(GLOB_RECURSE INC include/*.h include/*.hh)
 
 add_executable(icecc ${SRC} ${INC})
 target_compile_definitions(icecc PRIVATE

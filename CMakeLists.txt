@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(icecream VERSION 1.4.90)
+project(icecream VERSION 1.4.90 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 11)
