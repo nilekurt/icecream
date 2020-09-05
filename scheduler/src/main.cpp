@@ -51,6 +51,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <atomic>
 #include <fstream>
 
 /* TODO:
@@ -88,7 +89,10 @@ namespace {
 std::string pidFilePath;
 
 std::map<int, CompileServer *> fd2cs;
-volatile sig_atomic_t          exit_main_loop = false;
+
+std::atomic_flag exit_handler_called = ATOMIC_FLAG_INIT;
+std::atomic_bool
+    keep_running; // atomic_bool since test_and_set() is inconvenient
 
 time_t       starttime;
 time_t       last_announce;
@@ -1951,8 +1955,12 @@ usage(const char * reason = nullptr)
 void
 trigger_exit(int signum)
 {
-    if (!exit_main_loop) {
-        exit_main_loop = true;
+    if (!exit_handler_called.test_and_set(std::memory_order_relaxed)) {
+        /*
+         * We must guarantee that only one signal handler performs an operation
+         * on keep_running since it may not be lock free.
+         */
+        keep_running.store(false, std::memory_order_relaxed);
     } else {
         // hmm, we got killed already. try better
         static const char msg[] = "forced exit.\n";
@@ -2233,6 +2241,9 @@ main(int argc, char * argv[])
     pidFile << getpid() << std::endl;
     pidFile.close();
 
+    // Set running flag before activation of signal handlers
+    keep_running.store(true, std::memory_order_relaxed);
+
     signal(SIGTERM, trigger_exit);
     signal(SIGINT, trigger_exit);
     signal(SIGALRM, trigger_exit);
@@ -2243,8 +2254,7 @@ main(int argc, char * argv[])
 
     Broadcasts::broadcastSchedulerVersion(scheduler_port, netname, starttime);
     last_announce = starttime;
-
-    while (!exit_main_loop) {
+    while (keep_running.load(std::memory_order_relaxed)) {
         int timeout = prune_servers();
 
         while (empty_queue()) {
