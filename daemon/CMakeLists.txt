@@ -39,13 +39,10 @@ check_c_source_compiles(
 
 unset(CMAKE_REQUIRED_LIBRARIES)
 
-add_executable(iceccd
-    src/environment.cpp
-    src/file_util.cpp
-    src/load.cpp
-    src/main.cpp
-    src/serve.cpp
-    src/workit.cpp)
+file(GLOB_RECURSE SRC src/*.cpp src/*.c)
+file(GLOB_RECURSE INC include/*.h)
+
+add_executable(iceccd ${SRC} ${INCLUDE})
 target_compile_options(iceccd PRIVATE ${LIBCAP_NG_CFLAGS})
 target_compile_definitions(iceccd PRIVATE
     $<$<BOOL:${HAVE_ARPA_NAMESER_H}>:HAVE_ARPA_NAMESER_H>
