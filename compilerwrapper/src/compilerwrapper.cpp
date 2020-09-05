@@ -149,13 +149,13 @@ main(int argc, char * argv[])
     }
 
 #if DEBUG_LEVEL > 0
-    fprintf(stderr, "Args2:\n");
+    std::cout << "Args2:\n";
 
     for (int i = 0; i < pos; ++i) {
-        fprintf(stderr, "%s\n", args[i]);
+        std::cout << args[i] << 'n';
     }
 
-    fprintf(stderr, "\n");
+    std::cout << '\n';
 #endif
 
     const auto execv_args = [&args] {
