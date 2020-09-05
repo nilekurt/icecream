@@ -31,19 +31,11 @@ check_c_source_compiles(
     "
     HAVE_IFR_DSTADDR)
 
+file(GLOB_RECURSE SRC src/*.cpp src/*.c)
+file(GLOB_RECURSE INC include/*.h)
+
 add_library(icecc_la)
-target_sources(icecc_la PRIVATE
-    src/services_job.cpp
-    src/comm.cpp
-    src/exitcode.c
-    src/getifaddrs.cpp
-    src/ncpus.c
-    src/pipes.c
-    src/tempfile.c
-    src/platform.cpp
-    src/ggc.cpp
-    src/services_util.cpp
-    src/logging.cpp)
+target_sources(icecc_la PRIVATE ${SRC} ${INC})
 target_compile_definitions(icecc_la
     PUBLIC
     $<$<BOOL:${HAVE_IFADDRS_H}>:HAVE_IFADDRS_H>
@@ -59,3 +51,4 @@ target_link_libraries(icecc_la
 if (ICECREAM_LTO)
     set_property(TARGET icecc_la PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
 endif()
+
