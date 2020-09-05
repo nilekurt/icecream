@@ -39,7 +39,7 @@ target_compile_definitions(icecc PRIVATE
     $<$<BOOL:${HAVE_STRSIGNAL}>:HAVE_STRSIGNAL>
     $<$<BOOL:${HAVE_FLOCK}>:HAVE_FLOCK>
     $<$<BOOL:${HAVE_LOCKF}>:HAVE_LOCKF>)
-target_link_libraries(icecc PRIVATE copts_common icecc_la)
+target_link_libraries(icecc PRIVATE copts_common icecc_la asio)
 
 if (ICECREAM_LTO)
     set_property(TARGET icecc PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)

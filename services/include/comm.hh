@@ -25,6 +25,7 @@
 #ifndef _COMM_HH_
 #define _COMM_HH_
 
+#include "bytes.hh"
 #include "services_job.hh"
 
 #ifdef __linux__
@@ -37,6 +38,8 @@ extern "C" {
 #include <sys/socket.h>
 #include <sys/types.h>
 }
+
+#include <vector>
 
 // if you increase the PROTOCOL_VERSION, add a macro below and use that
 #define PROTOCOL_VERSION 43
@@ -151,12 +154,6 @@ enum MsgType
     M_NO_CS
 };
 
-enum Compression
-{
-    C_LZO = 0,
-    C_ZSTD = 1
-};
-
 // The remote node is capable of unpacking environment compressed as .tar.xz .
 const int NODE_FEATURE_ENV_XZ = (1 << 0);
 // The remote node is capable of unpacking environment compressed as .tar.zst .
@@ -165,17 +162,19 @@ const int NODE_FEATURE_ENV_ZSTD = (1 << 1);
 class MsgChannel;
 
 // a list of pairs of host platform, filename
-typedef std::list<std::pair<std::string, std::string>> Environments;
+using StringPair = std::pair<std::string, std::string>;
+using Environments = std::list<StringPair>;
 
 class Msg {
 public:
     Msg(enum MsgType t) : type(t) {}
-    virtual ~Msg() {}
+    virtual ~Msg() = default;
 
     virtual void
-    fill_from_channel(MsgChannel * c);
+    fill_from_channel(MsgChannel * c, int protocol_version);
+
     virtual void
-    send_to_channel(MsgChannel * c) const;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const;
 
     enum MsgType type;
 };
@@ -203,7 +202,7 @@ public:
 
     // false <--> error (msg not send)
     bool
-    send_msg(const Msg &, int SendFlags = SendBlocking);
+    send_msg(const Msg & msg, int send_flags = SendBlocking);
 
     bool
     has_msg(void) const
@@ -228,13 +227,9 @@ public:
                     size_t                _in_len,
                     size_t &              _out_len);
     void
-    write_environments(const Environments & envs);
-    void
     read_environments(Environments & envs);
     void
     read_line(std::string & line);
-    void
-    write_line(const std::string & line);
 
     bool
     eq_ip(const MsgChannel & s) const;
@@ -245,12 +240,6 @@ public:
     operator>>(std::string &);
     MsgChannel &
     operator>>(std::list<std::string> &);
-
-    MsgChannel & operator<<(uint32_t);
-    MsgChannel &
-    operator<<(const std::string &);
-    MsgChannel &
-    operator<<(const std::list<std::string> &);
 
     // our filedesc
     int fd;
@@ -496,9 +485,10 @@ public:
              unsigned int         _client_count = 0);
 
     virtual void
-    fill_from_channel(MsgChannel * c);
+    fill_from_channel(MsgChannel * c, int protocol_version);
+
     virtual void
-    send_to_channel(MsgChannel * c) const;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const override;
 
     Environments         versions;
     std::string          filename;
@@ -536,9 +526,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const override;
 
     uint32_t    job_id;
     std::string hostname;
@@ -558,9 +549,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     uint32_t job_id;
     uint32_t client_id;
@@ -578,9 +570,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     std::string            compiler; // "gcc", "clang" or the actual binary
     std::list<std::string> extrafiles;
@@ -597,9 +590,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     std::string nativeVersion;
 };
@@ -619,9 +613,11 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
+
     CompileJob *
     takeJob();
 
@@ -645,9 +641,10 @@ public:
     ~FileChunkMsg();
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     unsigned char * buffer;
     size_t          len;
@@ -671,13 +668,14 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     int         status;
-    std::string out;
-    std::string err;
+    std::string out_;
+    std::string err_;
     bool        was_out_of_memory;
     bool        have_dwo_file;
 };
@@ -695,9 +693,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c);
+    fill_from_channel(MsgChannel * c, int protocol_version);
+
     virtual void
-    send_to_channel(MsgChannel * c) const;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     uint32_t job_id;
     uint32_t stime;
@@ -747,9 +746,10 @@ public:
     set_job_id(uint32_t jobId);
 
     virtual void
-    fill_from_channel(MsgChannel * c) override;
+    fill_from_channel(MsgChannel * c, int protocol_version) override;
+
     virtual void
-    send_to_channel(MsgChannel * c) const override;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const override;
 
     uint32_t real_msec; /* real time it used */
     uint32_t user_msec; /* user time used */
@@ -777,9 +777,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     std::string outfile;
     uint32_t    stime;
@@ -791,9 +792,10 @@ public:
     JobLocalDoneMsg(unsigned int id = 0) : Msg(M_JOB_LOCAL_DONE), job_id(id) {}
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     uint32_t job_id;
 };
@@ -807,9 +809,10 @@ public:
     LoginMsg() : Msg(M_LOGIN), port(0) {}
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     uint32_t     port;
     Environments envs;
@@ -831,9 +834,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     uint32_t max_scheduler_pong;
     uint32_t max_scheduler_ping;
@@ -844,9 +848,10 @@ public:
     StatsMsg() : Msg(M_STATS), load(0), client_count(0) {}
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     /**
      * For now the only load measure we have is the
@@ -877,9 +882,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     std::string name;
     std::string target;
@@ -923,9 +929,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     uint32_t job_id;
     uint32_t clientid;
@@ -941,9 +948,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     uint32_t job_id;
     uint32_t stime;
@@ -980,9 +988,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     uint32_t    job_id;
     uint32_t    stime;
@@ -1000,9 +1009,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     uint32_t    hostid;
     std::string statmsg;
@@ -1017,9 +1027,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     std::string text;
 };
@@ -1034,9 +1045,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     std::string environment;
     std::string target;
@@ -1049,9 +1061,10 @@ public:
     VerifyEnvResultMsg(bool _ok) : Msg(M_VERIFY_ENV_RESULT), ok(_ok) {}
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     bool ok;
 };
@@ -1071,9 +1084,10 @@ public:
     }
 
     virtual void
-    fill_from_channel(MsgChannel * c) final;
+    fill_from_channel(MsgChannel * c, int protocol_version) final;
+
     virtual void
-    send_to_channel(MsgChannel * c) const final;
+    serialize(int protocol_version, std::vector<uint8_t> & out) const final;
 
     std::string environment;
     std::string target;

@@ -31,16 +31,16 @@
 
 extern "C" {
 #include <arpa/inet.h>
+#include <lzo/lzo1x.h>
 #include <poll.h>
 #include <sys/un.h>
+#include <zstd.h>
 #ifdef HAVE_NETINET_TCP_VAR_H
 #include <netinet/tcp_var.h>
 #include <sys/socketvar.h>
 #endif
 #include <fcntl.h>
-#include <lzo/lzo1x.h>
 #include <netdb.h>
-#include <zstd.h>
 #ifdef HAVE_LIBCAP_NG
 #include <cap-ng.h>
 #endif
@@ -76,20 +76,6 @@ extern "C" {
 #define MAX_SLOW_WRITE_SIZE 10 * 1024
 
 namespace {
-
-int
-zstd_compression()
-{
-    const char * level = getenv("ICECC_COMPRESSION");
-    if (!level || !*level)
-        return ZSTD_CLEVEL_DEFAULT;
-
-    char * endptr;
-    int    n = strtol(level, &endptr, 0);
-    if (*endptr)
-        return ZSTD_CLEVEL_DEFAULT;
-    return n;
-}
 
 std::string
 shorten_filename(const std::string & str)
@@ -681,14 +667,6 @@ MsgChannel::operator>>(uint32_t & buf)
 }
 
 MsgChannel &
-MsgChannel::operator<<(uint32_t i)
-{
-    i = htonl(i);
-    writefull(&i, 4);
-    return *this;
-}
-
-MsgChannel &
 MsgChannel::operator>>(std::string & s)
 {
     char * buf;
@@ -703,16 +681,9 @@ MsgChannel::operator>>(std::string & s)
         intogo += len;
         s = buf;
     }
+    std::cout << "Read string \"" << s << "\" of length " << s.size() << " ("
+              << len << " in memory)" << std::endl;
 
-    return *this;
-}
-
-MsgChannel &
-MsgChannel::operator<<(const std::string & s)
-{
-    uint32_t len = 1 + s.length();
-    *this << len;
-    writefull(s.c_str(), len);
     return *this;
 }
 
@@ -736,29 +707,6 @@ MsgChannel::operator>>(std::list<std::string> & l)
     return *this;
 }
 
-MsgChannel &
-MsgChannel::operator<<(const std::list<std::string> & l)
-{
-    *this << (uint32_t)l.size();
-
-    for (const std::string & s : l) {
-        *this << s;
-    }
-
-    return *this;
-}
-
-void
-MsgChannel::write_environments(const Environments & envs)
-{
-    *this << envs.size();
-
-    for (const std::pair<std::string, std::string> & env : envs) {
-        *this << env.first;
-        *this << env.second;
-    }
-}
-
 void
 MsgChannel::read_environments(Environments & envs)
 {
@@ -780,6 +728,8 @@ MsgChannel::readcompressed(unsigned char ** uncompressed_buf,
                            size_t &         _uclen,
                            size_t &         _clen)
 {
+    log_info() << "readcompressed()" << std::endl;
+
     lzo_uint uncompressed_len;
     lzo_uint compressed_len;
     uint32_t tmp;
@@ -788,17 +738,27 @@ MsgChannel::readcompressed(unsigned char ** uncompressed_buf,
     *this >> tmp;
     compressed_len = tmp;
 
-    uint32_t proto = C_LZO;
+    log_info() << "uncompressed: " << uncompressed_len
+               << ", compressed: " << compressed_len << std::endl;
+
+    auto proto = bytes::CompressionMethod::LZO;
     if (IS_PROTOCOL_40(this)) {
-        *this >> proto;
-        if (proto != C_LZO && proto != C_ZSTD) {
-            log_error() << "Unknown compression protocol " << proto
-                        << std::endl;
-            *uncompressed_buf = nullptr;
-            _uclen = 0;
-            _clen = compressed_len;
-            set_error();
-            return;
+        uint32_t tmp;
+        *this >> tmp;
+
+        switch (tmp) {
+            case 0: proto = bytes::CompressionMethod::LZO; break;
+            case 1: proto = bytes::CompressionMethod::ZSTD; break;
+
+            default: {
+                log_error()
+                    << "Unknown compression protocol " << tmp << std::endl;
+                *uncompressed_buf = nullptr;
+                _uclen = 0;
+                _clen = compressed_len;
+                set_error();
+                return;
+            }
         }
     }
 
@@ -820,7 +780,8 @@ MsgChannel::readcompressed(unsigned char ** uncompressed_buf,
 
     *uncompressed_buf = new unsigned char[uncompressed_len];
 
-    if (proto == C_ZSTD && uncompressed_len && compressed_len) {
+    if (proto == bytes::CompressionMethod::ZSTD && uncompressed_len &&
+        compressed_len) {
         const void * compressed_buf = inbuf + intogo;
         size_t       ret = ZSTD_decompress(*uncompressed_buf,
                                      uncompressed_len,
@@ -834,7 +795,8 @@ MsgChannel::readcompressed(unsigned char ** uncompressed_buf,
             *uncompressed_buf = nullptr;
             uncompressed_len = 0;
         }
-    } else if (proto == C_LZO && uncompressed_len && compressed_len) {
+    } else if (proto == bytes::CompressionMethod::LZO && uncompressed_len &&
+               compressed_len) {
         const lzo_byte * compressed_buf = (lzo_byte *)(inbuf + intogo);
         lzo_voidp        wrkmem = (lzo_voidp)malloc(LZO1X_MEM_COMPRESS);
         int              ret = lzo1x_decompress(compressed_buf,
@@ -866,72 +828,6 @@ MsgChannel::readcompressed(unsigned char ** uncompressed_buf,
 }
 
 void
-MsgChannel::writecompressed(const unsigned char * in_buf,
-                            size_t                _in_len,
-                            size_t &              _out_len)
-{
-    uint32_t proto = C_LZO;
-    if (IS_PROTOCOL_40(this))
-        proto = C_ZSTD;
-
-    lzo_uint in_len = _in_len;
-    lzo_uint out_len = _out_len;
-    if (proto == C_LZO)
-        out_len = in_len + in_len / 64 + 16 + 3;
-    else if (proto == C_ZSTD)
-        out_len = ZSTD_COMPRESSBOUND(in_len);
-    *this << in_len;
-    size_t msgtogo_old = msgtogo;
-    *this << (uint32_t)0;
-
-    if (IS_PROTOCOL_40(this))
-        *this << proto;
-
-    if (msgtogo + out_len >= msgbuflen) {
-        /* Realloc to a multiple of 128.  */
-        msgbuflen = (msgtogo + out_len + 127) & ~(size_t)127;
-        msgbuf = (char *)realloc(msgbuf, msgbuflen);
-        assert(msgbuf); // Probably unrecoverable if realloc fails anyway.
-    }
-
-    if (proto == C_LZO) {
-        lzo_byte * out_buf = (lzo_byte *)(msgbuf + msgtogo);
-        lzo_voidp  wrkmem = (lzo_voidp)malloc(LZO1X_MEM_COMPRESS);
-        int ret = lzo1x_1_compress(in_buf, in_len, out_buf, &out_len, wrkmem);
-        free(wrkmem);
-
-        if (ret != LZO_E_OK) {
-            /* this should NEVER happen */
-            log_error() << "internal error - compression failed: " << ret
-                        << std::endl;
-            out_len = 0;
-        }
-    } else if (proto == C_ZSTD) {
-        void * out_buf = msgbuf + msgtogo;
-        size_t ret =
-            ZSTD_compress(out_buf, out_len, in_buf, in_len, zstd_compression());
-        if (ZSTD_isError(ret)) {
-            /* this should NEVER happen */
-            log_error() << "internal error - compression failed: "
-                        << ZSTD_getErrorName(ret) << std::endl;
-            out_len = 0;
-        }
-
-        out_len = ret;
-    }
-
-    uint32_t _olen = htonl(out_len);
-    if (out_len > MAX_MSG_SIZE) {
-        log_error() << "internal error - size of compressed message to write "
-                       "exceeds max size:"
-                    << out_len << std::endl;
-    }
-    memcpy(msgbuf + msgtogo_old, &_olen, 4);
-    msgtogo += out_len;
-    _out_len = out_len;
-}
-
-void
 MsgChannel::read_line(std::string & line)
 {
     /* XXX handle DOS and MAC line endings and null bytes as std::string
@@ -945,18 +841,6 @@ MsgChannel::read_line(std::string & line)
         while (intogo < inofs && inbuf[intogo] < ' ') {
             intogo++;
         }
-    }
-}
-
-void
-MsgChannel::write_line(const std::string & line)
-{
-    size_t len = line.length();
-    writefull(line.c_str(), len);
-
-    if (line[len - 1] != '\n') {
-        char c = '\n';
-        writefull(&c, 1);
     }
 }
 
@@ -1394,7 +1278,7 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
         return nullptr;
     }
 
-    m->fill_from_channel(this);
+    m->fill_from_channel(this, protocol);
 
     if (true) {
         if (intogo - intogo_old != inmsglen) {
@@ -1414,7 +1298,7 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
 }
 
 bool
-MsgChannel::send_msg(const Msg & m, int flags)
+MsgChannel::send_msg(const Msg & msg, int send_flags)
 {
     if (instate == ERROR) {
         return false;
@@ -1426,8 +1310,15 @@ MsgChannel::send_msg(const Msg & m, int flags)
     chop_output();
     size_t msgtogo_old = msgtogo;
 
-    *this << (uint32_t)0;
-    m.send_to_channel(this);
+    std::vector<uint8_t> payload{};
+
+    // Remains from the old telnet interface
+    bytes::serialize(uint32_t{0}, payload);
+
+    msg.serialize(protocol, payload);
+
+    writefull(payload.data(), payload.size());
+
     uint32_t out_len = msgtogo - msgtogo_old - 4;
     if (out_len > MAX_MSG_SIZE) {
         log_error()
@@ -1438,12 +1329,11 @@ MsgChannel::send_msg(const Msg & m, int flags)
     }
     uint32_t len = htonl(out_len);
     memcpy(msgbuf + msgtogo_old, &len, 4);
-
-    if ((flags & SendBulkOnly) && msgtogo < 4096) {
+    if ((send_flags & SendBulkOnly) && msgtogo < 4096) {
         return true;
     }
 
-    return flush_writebuf((flags & SendBlocking));
+    return flush_writebuf((send_flags & SendBlocking));
 }
 
 void
@@ -1988,14 +1878,16 @@ get_netnames(int timeout, int port)
 }
 
 void
-Msg::fill_from_channel(MsgChannel *)
+Msg::fill_from_channel(MsgChannel * /*c*/, int /*protocol_version*/)
 {
 }
 
 void
-Msg::send_to_channel(MsgChannel * c) const
+Msg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    *c << (uint32_t)type;
+    log_info() << "Serializing Msg (prot=" << protocol_version
+               << ", type=" << type << ')' << std::endl;
+    bytes::serialize(static_cast<uint32_t>(type), out);
 }
 
 GetCSMsg::GetCSMsg(const Environments & envs,
@@ -2030,9 +1922,9 @@ GetCSMsg::GetCSMsg(const Environments & envs,
 }
 
 void
-GetCSMsg::fill_from_channel(MsgChannel * c)
+GetCSMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     c->read_environments(versions);
     *c >> filename;
     uint32_t _lang;
@@ -2044,12 +1936,12 @@ GetCSMsg::fill_from_channel(MsgChannel * c)
     *c >> client_id;
     preferred_host = std::string();
 
-    if (IS_PROTOCOL_22(c)) {
+    if (protocol_version >= 22) {
         *c >> preferred_host;
     }
 
     minimal_host_version = 0;
-    if (IS_PROTOCOL_31(c)) {
+    if (protocol_version >= 31) {
         uint32_t ign;
         *c >> ign;
         // Versions 31-33 had this as a separate field, now set a minimal
@@ -2057,65 +1949,67 @@ GetCSMsg::fill_from_channel(MsgChannel * c)
         if (ign != 0 && minimal_host_version < 31)
             minimal_host_version = 31;
     }
-    if (IS_PROTOCOL_34(c)) {
+    if (protocol_version >= 34) {
         uint32_t version;
         *c >> version;
         minimal_host_version = std::max(minimal_host_version, int(version));
     }
 
-    if (IS_PROTOCOL_39(c)) {
+    if (protocol_version >= 39) {
         *c >> client_count;
     }
 
     required_features = 0;
-    if (IS_PROTOCOL_42(c)) {
+    if (protocol_version >= 42) {
         *c >> required_features;
     }
 
     niceness = 0;
-    if (IS_PROTOCOL_43(c)) {
+    if (protocol_version >= 43) {
         *c >> niceness;
     }
 }
 
 void
-GetCSMsg::send_to_channel(MsgChannel * c) const
+GetCSMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    c->write_environments(versions);
-    *c << shorten_filename(filename);
-    *c << (uint32_t)lang;
-    *c << count;
-    *c << target;
-    *c << arg_flags;
-    *c << client_id;
+    log_info() << "Serializing GetCSMMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
 
-    if (IS_PROTOCOL_22(c)) {
-        *c << preferred_host;
-    }
+    bytes::serialize(versions.begin(), versions.end(), out);
+    bytes::serialize(shorten_filename(filename), out);
+    bytes::serialize(static_cast<uint32_t>(lang), out);
+    bytes::serialize(count, out);
+    bytes::serialize(target, out);
+    bytes::serialize(arg_flags, out);
+    bytes::serialize(client_id, out);
 
-    if (IS_PROTOCOL_31(c)) {
-        *c << uint32_t(minimal_host_version >= 31 ? 1 : 0);
-    }
-    if (IS_PROTOCOL_34(c)) {
-        *c << minimal_host_version;
+    if (protocol_version >= 22) {
+        bytes::serialize(preferred_host, out);
     }
 
-    if (IS_PROTOCOL_39(c)) {
-        *c << client_count;
+    if (protocol_version >= 31) {
+        bytes::serialize((minimal_host_version >= 31 ? 1 : 0), out);
     }
-    if (IS_PROTOCOL_42(c)) {
-        *c << required_features;
+    if (protocol_version >= 34) {
+        bytes::serialize(minimal_host_version, out);
     }
-    if (IS_PROTOCOL_43(c)) {
-        *c << niceness;
+
+    if (protocol_version >= 39) {
+        bytes::serialize(client_count, out);
+    }
+    if (protocol_version >= 42) {
+        bytes::serialize(required_features, out);
+    }
+    if (protocol_version >= 43) {
+        bytes::serialize(niceness, out);
     }
 }
 
 void
-UseCSMsg::fill_from_channel(MsgChannel * c)
+UseCSMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> job_id;
     *c >> port;
     *c >> hostname;
@@ -2123,7 +2017,7 @@ UseCSMsg::fill_from_channel(MsgChannel * c)
     *c >> got_env;
     *c >> client_id;
 
-    if (IS_PROTOCOL_28(c)) {
+    if (protocol_version >= 28) {
         *c >> matched_job_id;
     } else {
         matched_job_id = 0;
@@ -2131,47 +2025,49 @@ UseCSMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-UseCSMsg::send_to_channel(MsgChannel * c) const
+UseCSMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << job_id;
-    *c << port;
-    *c << hostname;
-    *c << host_platform;
-    *c << got_env;
-    *c << client_id;
+    log_info() << "Serializing UseCSMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(job_id, out);
+    bytes::serialize(port, out);
+    bytes::serialize(hostname, out);
+    bytes::serialize(host_platform, out);
+    bytes::serialize(got_env, out);
+    bytes::serialize(client_id, out);
 
-    if (IS_PROTOCOL_28(c)) {
-        *c << matched_job_id;
+    if (protocol_version >= 28) {
+        bytes::serialize(matched_job_id, out);
     }
 }
 
 void
-NoCSMsg::fill_from_channel(MsgChannel * c)
+NoCSMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> job_id;
     *c >> client_id;
 }
 
 void
-NoCSMsg::send_to_channel(MsgChannel * c) const
+NoCSMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << job_id;
-    *c << client_id;
+    log_info() << "Serializing NoCSMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(job_id, out);
+    bytes::serialize(client_id, out);
 }
 
 void
-CompileFileMsg::fill_from_channel(MsgChannel * c)
+CompileFileMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     uint32_t    id, lang;
     std::string version;
     *c >> lang;
     *c >> id;
     ArgumentsList l;
-    if (IS_PROTOCOL_41(c)) {
+    if (protocol_version >= 41) {
         std::list<std::string> largs;
         *c >> largs;
         // Whe compiling remotely, we no longer care about the Arg_Remote vs
@@ -2200,12 +2096,12 @@ CompileFileMsg::fill_from_channel(MsgChannel * c)
     *c >> target;
     job->setTargetPlatform(target);
 
-    if (IS_PROTOCOL_30(c)) {
+    if (protocol_version >= 30) {
         std::string compilerName;
         *c >> compilerName;
         job->setCompilerName(compilerName);
     }
-    if (IS_PROTOCOL_34(c)) {
+    if (protocol_version >= 34) {
         std::string inputFile;
         std::string workingDirectory;
         *c >> inputFile;
@@ -2213,7 +2109,7 @@ CompileFileMsg::fill_from_channel(MsgChannel * c)
         job->setInputFile(inputFile);
         job->setWorkingDirectory(workingDirectory);
     }
-    if (IS_PROTOCOL_35(c)) {
+    if (protocol_version >= 35) {
         std::string outputFile;
         uint32_t    dwarfFissionEnabled = 0;
         *c >> outputFile;
@@ -2224,46 +2120,52 @@ CompileFileMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-CompileFileMsg::send_to_channel(MsgChannel * c) const
+CompileFileMsg::serialize(int                    protocol_version,
+                          std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << (uint32_t)job->language();
-    *c << job->jobID();
+    log_info() << "Serializing CompileFileMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(static_cast<uint32_t>(job->language()), out);
+    bytes::serialize(job->jobID(), out);
 
-    if (IS_PROTOCOL_41(c)) {
+    if (protocol_version >= 41) {
         // By the time we're compiling, the args are all Arg_Remote or Arg_Rest
         // and we no longer care about the differences, but we may care about
         // the ordering. So keep them all in one list.
-        *c << job->nonLocalFlags();
+        bytes::serialize(
+            job->nonLocalFlags().begin(), job->nonLocalFlags().end(), out);
     } else {
-        if (IS_PROTOCOL_30(c)) {
-            *c << job->remoteFlags();
+        if (protocol_version >= 30) {
+            bytes::serialize(
+                job->remoteFlags().begin(), job->remoteFlags().end(), out);
         } else {
             if (job->compilerName().find("clang") != std::string::npos) {
                 // Hack for compilerwrapper.
                 std::list<std::string> flags = job->remoteFlags();
                 flags.push_front("clang");
-                *c << flags;
+                bytes::serialize(flags.begin(), flags.end(), out);
             } else {
-                *c << job->remoteFlags();
+                bytes::serialize(
+                    job->remoteFlags().begin(), job->remoteFlags().end(), out);
             }
         }
-        *c << job->restFlags();
+        bytes::serialize(job->restFlags().begin(), job->restFlags().end(), out);
     }
 
-    *c << job->environmentVersion();
-    *c << job->targetPlatform();
+    bytes::serialize(job->environmentVersion(), out);
+    bytes::serialize(job->targetPlatform(), out);
 
-    if (IS_PROTOCOL_30(c)) {
-        *c << remote_compiler_name();
+    if (protocol_version >= 30) {
+        bytes::serialize(remote_compiler_name(), out);
     }
-    if (IS_PROTOCOL_34(c)) {
-        *c << job->inputFile();
-        *c << job->workingDirectory();
+    if (protocol_version >= 34) {
+        bytes::serialize(job->inputFile(), out);
+        bytes::serialize(job->workingDirectory(), out);
     }
-    if (IS_PROTOCOL_35(c)) {
-        *c << job->outputFile();
-        *c << (uint32_t)job->dwarfFissionEnabled();
+    if (protocol_version >= 35) {
+        bytes::serialize(job->outputFile(), out);
+        bytes::serialize(static_cast<uint32_t>(job->dwarfFissionEnabled()),
+                         out);
     }
 }
 
@@ -2290,7 +2192,7 @@ CompileFileMsg::takeJob()
 }
 
 void
-FileChunkMsg::fill_from_channel(MsgChannel * c)
+FileChunkMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
     if (del_buf) {
         delete[] buffer;
@@ -2299,15 +2201,27 @@ FileChunkMsg::fill_from_channel(MsgChannel * c)
     buffer = nullptr;
     del_buf = true;
 
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     c->readcompressed(&buffer, len, compressed);
 }
 
 void
-FileChunkMsg::send_to_channel(MsgChannel * c) const
+FileChunkMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    c->writecompressed(buffer, len, compressed);
+    log_info() << "Serializing FileChunkMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+
+    const auto method = (protocol_version >= 40)
+                            ? bytes::CompressionMethod::ZSTD
+                            : bytes::CompressionMethod::LZO;
+
+    compressed = bytes::compress(buffer, len, out, method);
+
+    if (compressed > MAX_MSG_SIZE) {
+        log_error() << "internal error - size of compressed message to write "
+                       "exceeds max size: "
+                    << compressed << std::endl;
+    }
 }
 
 FileChunkMsg::~FileChunkMsg()
@@ -2318,18 +2232,18 @@ FileChunkMsg::~FileChunkMsg()
 }
 
 void
-CompileResultMsg::fill_from_channel(MsgChannel * c)
+CompileResultMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     uint32_t _status = 0;
-    *c >> err;
-    *c >> out;
+    *c >> err_;
+    *c >> out_;
     *c >> _status;
     status = _status;
     uint32_t was = 0;
     *c >> was;
     was_out_of_memory = was;
-    if (IS_PROTOCOL_35(c)) {
+    if (protocol_version >= 35) {
         uint32_t dwo = 0;
         *c >> dwo;
         have_dwo_file = dwo;
@@ -2337,70 +2251,77 @@ CompileResultMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-CompileResultMsg::send_to_channel(MsgChannel * c) const
+CompileResultMsg::serialize(int                    protocol_version,
+                            std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << err;
-    *c << out;
-    *c << status;
-    *c << (uint32_t)was_out_of_memory;
-    if (IS_PROTOCOL_35(c)) {
-        *c << (uint32_t)have_dwo_file;
+    log_info() << "Serializing CompileResultMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(err_, out);
+    bytes::serialize(out_, out);
+    bytes::serialize(status, out);
+    bytes::serialize(static_cast<uint32_t>(was_out_of_memory), out);
+    if (protocol_version >= 35) {
+        bytes::serialize(static_cast<uint32_t>(have_dwo_file), out);
     }
 }
 
 void
-JobBeginMsg::fill_from_channel(MsgChannel * c)
+JobBeginMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> job_id;
     *c >> stime;
-    if (IS_PROTOCOL_39(c)) {
+    if (protocol_version >= 39) {
         *c >> client_count;
     }
 }
 
 void
-JobBeginMsg::send_to_channel(MsgChannel * c) const
+JobBeginMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << job_id;
-    *c << stime;
-    if (IS_PROTOCOL_39(c)) {
-        *c << client_count;
+    log_info() << "Serializing JobBeginMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(job_id, out);
+    bytes::serialize(stime, out);
+    if (protocol_version >= 39) {
+        bytes::serialize(client_count, out);
     }
 }
 
 void
-JobLocalBeginMsg::fill_from_channel(MsgChannel * c)
+JobLocalBeginMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> stime;
     *c >> outfile;
     *c >> id;
 }
 
 void
-JobLocalBeginMsg::send_to_channel(MsgChannel * c) const
+JobLocalBeginMsg::serialize(int                    protocol_version,
+                            std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << stime;
-    *c << outfile;
-    *c << id;
+    log_info() << "Serializing JobLocalBeginMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(stime, out);
+    bytes::serialize(outfile, out);
+    bytes::serialize(id, out);
 }
 
 void
-JobLocalDoneMsg::fill_from_channel(MsgChannel * c)
+JobLocalDoneMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> job_id;
 }
 
 void
-JobLocalDoneMsg::send_to_channel(MsgChannel * c) const
+JobLocalDoneMsg::serialize(int                    protocol_version,
+                           std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << job_id;
+    log_info() << "Serializing JobLocalDoneMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(job_id, out);
 }
 
 JobDoneMsg::JobDoneMsg(int          id,
@@ -2424,9 +2345,9 @@ JobDoneMsg::JobDoneMsg(int          id,
 }
 
 void
-JobDoneMsg::fill_from_channel(MsgChannel * c)
+JobDoneMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     uint32_t _exitcode = 255;
     *c >> job_id;
     *c >> _exitcode;
@@ -2442,35 +2363,36 @@ JobDoneMsg::fill_from_channel(MsgChannel * c)
     exitcode = (int)_exitcode;
     // Older versions used this special exit code to identify
     // EndJob messages for jobs with unknown job id.
-    if (!IS_PROTOCOL_39(c) && exitcode == 200) {
+    if (!(protocol_version >= 39) && (exitcode == 200)) {
         flags |= UnknownJobId;
     }
-    if (IS_PROTOCOL_39(c)) {
+    if (protocol_version >= 39) {
         *c >> client_count;
     }
 }
 
 void
-JobDoneMsg::send_to_channel(MsgChannel * c) const
+JobDoneMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << job_id;
-    if (!IS_PROTOCOL_39(c) && (flags & UnknownJobId)) {
-        *c << (uint32_t)200;
+    log_info() << "Serializing JobDoneMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(job_id, out);
+    if (!(protocol_version >= 39) && (flags & UnknownJobId)) {
+        bytes::serialize(static_cast<uint32_t>(200), out);
     } else {
-        *c << (uint32_t)exitcode;
+        bytes::serialize(static_cast<uint32_t>(exitcode), out);
     }
-    *c << real_msec;
-    *c << user_msec;
-    *c << sys_msec;
-    *c << pfaults;
-    *c << in_compressed;
-    *c << in_uncompressed;
-    *c << out_compressed;
-    *c << out_uncompressed;
-    *c << flags;
-    if (IS_PROTOCOL_39(c)) {
-        *c << client_count;
+    bytes::serialize(real_msec, out);
+    bytes::serialize(user_msec, out);
+    bytes::serialize(sys_msec, out);
+    bytes::serialize(pfaults, out);
+    bytes::serialize(in_compressed, out);
+    bytes::serialize(in_uncompressed, out);
+    bytes::serialize(out_compressed, out);
+    bytes::serialize(out_uncompressed, out);
+    bytes::serialize(flags, out);
+    if (protocol_version >= 39) {
+        bytes::serialize(client_count, out);
     }
 }
 
@@ -2519,9 +2441,9 @@ LoginMsg::LoginMsg(unsigned int        myport,
 }
 
 void
-LoginMsg::fill_from_channel(MsgChannel * c)
+LoginMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> port;
     *c >> max_kids;
     c->read_environments(envs);
@@ -2532,41 +2454,42 @@ LoginMsg::fill_from_channel(MsgChannel * c)
     chroot_possible = net_chroot_possible != 0;
     uint32_t net_noremote = 0;
 
-    if (IS_PROTOCOL_26(c)) {
+    if (protocol_version >= 26) {
         *c >> net_noremote;
     }
 
     noremote = (net_noremote != 0);
 
     supported_features = 0;
-    if (IS_PROTOCOL_42(c)) {
+    if (protocol_version >= 42) {
         *c >> supported_features;
     }
 }
 
 void
-LoginMsg::send_to_channel(MsgChannel * c) const
+LoginMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << port;
-    *c << max_kids;
-    c->write_environments(envs);
-    *c << nodename;
-    *c << host_platform;
-    *c << chroot_possible;
+    log_info() << "Serializing LoginMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(port, out);
+    bytes::serialize(max_kids, out);
+    bytes::serialize(envs.begin(), envs.end(), out);
+    bytes::serialize(nodename, out);
+    bytes::serialize(host_platform, out);
+    bytes::serialize(chroot_possible, out);
 
-    if (IS_PROTOCOL_26(c)) {
-        *c << noremote;
+    if (protocol_version >= 26) {
+        bytes::serialize(noremote, out);
     }
-    if (IS_PROTOCOL_42(c)) {
-        *c << supported_features;
+    if (protocol_version >= 42) {
+        bytes::serialize(supported_features, out);
     }
 }
 
 void
-ConfCSMsg::fill_from_channel(MsgChannel * c)
+ConfCSMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> max_scheduler_pong;
     *c >> max_scheduler_ping;
     std::string bench_source; // unused, kept for backwards compatibility
@@ -2574,19 +2497,20 @@ ConfCSMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-ConfCSMsg::send_to_channel(MsgChannel * c) const
+ConfCSMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << max_scheduler_pong;
-    *c << max_scheduler_ping;
+    log_info() << "Serializing ConfCSMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(max_scheduler_pong, out);
+    bytes::serialize(max_scheduler_ping, out);
     std::string bench_source;
-    *c << bench_source;
+    bytes::serialize(bench_source, out);
 }
 
 void
-StatsMsg::fill_from_channel(MsgChannel * c)
+StatsMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> load;
     *c >> loadAvg1;
     *c >> loadAvg5;
@@ -2595,84 +2519,93 @@ StatsMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-StatsMsg::send_to_channel(MsgChannel * c) const
+StatsMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << load;
-    *c << loadAvg1;
-    *c << loadAvg5;
-    *c << loadAvg10;
-    *c << freeMem;
+    log_info() << "Serializing StatsMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(load, out);
+    bytes::serialize(loadAvg1, out);
+    bytes::serialize(loadAvg5, out);
+    bytes::serialize(loadAvg10, out);
+    bytes::serialize(freeMem, out);
 }
 
 void
-GetNativeEnvMsg::fill_from_channel(MsgChannel * c)
+GetNativeEnvMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
 
-    if (IS_PROTOCOL_32(c)) {
+    if (protocol_version >= 32) {
         *c >> compiler;
         *c >> extrafiles;
     }
     compression = std::string();
-    if (IS_PROTOCOL_42(c))
+    if (protocol_version >= 42)
         *c >> compression;
 }
 
 void
-GetNativeEnvMsg::send_to_channel(MsgChannel * c) const
+GetNativeEnvMsg::serialize(int                    protocol_version,
+                           std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
+    log_info() << "Serializing GetNativeEnvMsg" << std::endl;
 
-    if (IS_PROTOCOL_32(c)) {
-        *c << compiler;
-        *c << extrafiles;
+    Msg::serialize(protocol_version, out);
+
+    if (protocol_version >= 32) {
+        bytes::serialize(compiler, out);
+        bytes::serialize(extrafiles.begin(), extrafiles.end(), out);
     }
-    if (IS_PROTOCOL_42(c))
-        *c << compression;
+    if (protocol_version >= 42) {
+        bytes::serialize(compression, out);
+    }
 }
 
 void
-UseNativeEnvMsg::fill_from_channel(MsgChannel * c)
+UseNativeEnvMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> nativeVersion;
 }
 
 void
-UseNativeEnvMsg::send_to_channel(MsgChannel * c) const
+UseNativeEnvMsg::serialize(int                    protocol_version,
+                           std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << nativeVersion;
+    log_info() << "Serializing UseNativeEnvMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(nativeVersion, out);
 }
 
 void
-EnvTransferMsg::fill_from_channel(MsgChannel * c)
+EnvTransferMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> name;
     *c >> target;
 }
 
 void
-EnvTransferMsg::send_to_channel(MsgChannel * c) const
+EnvTransferMsg::serialize(int                    protocol_version,
+                          std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << name;
-    *c << target;
+    log_info() << "Serializing EnvTransferMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(name, out);
+    bytes::serialize(target, out);
 }
 
 void
-MonGetCSMsg::fill_from_channel(MsgChannel * c)
+MonGetCSMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    if (IS_PROTOCOL_29(c)) {
-        Msg::fill_from_channel(c);
+    if (protocol_version >= 29) {
+        Msg::fill_from_channel(c, protocol_version);
         *c >> filename;
         uint32_t _lang;
         *c >> _lang;
         lang = static_cast<CompileJob::Language>(_lang);
     } else {
-        GetCSMsg::fill_from_channel(c);
+        GetCSMsg::fill_from_channel(c, protocol_version);
     }
 
     *c >> job_id;
@@ -2680,42 +2613,46 @@ MonGetCSMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-MonGetCSMsg::send_to_channel(MsgChannel * c) const
+MonGetCSMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    if (IS_PROTOCOL_29(c)) {
-        Msg::send_to_channel(c);
-        *c << shorten_filename(filename);
-        *c << (uint32_t)lang;
+    log_info() << "Serializing MonGetCSMsg" << std::endl;
+
+    if (protocol_version >= 29) {
+        Msg::serialize(protocol_version, out);
+        bytes::serialize(shorten_filename(filename), out);
+        bytes::serialize(static_cast<uint32_t>(lang), out);
     } else {
-        GetCSMsg::send_to_channel(c);
+        GetCSMsg::serialize(protocol_version, out);
     }
 
-    *c << job_id;
-    *c << clientid;
+    bytes::serialize(job_id, out);
+    bytes::serialize(clientid, out);
 }
 
 void
-MonJobBeginMsg::fill_from_channel(MsgChannel * c)
+MonJobBeginMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> job_id;
     *c >> stime;
     *c >> hostid;
 }
 
 void
-MonJobBeginMsg::send_to_channel(MsgChannel * c) const
+MonJobBeginMsg::serialize(int                    protocol_version,
+                          std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << job_id;
-    *c << stime;
-    *c << hostid;
+    log_info() << "Serializing MonJobBeginMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(job_id, out);
+    bytes::serialize(stime, out);
+    bytes::serialize(hostid, out);
 }
 
 void
-MonLocalJobBeginMsg::fill_from_channel(MsgChannel * c)
+MonLocalJobBeginMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> hostid;
     *c >> job_id;
     *c >> stime;
@@ -2723,93 +2660,102 @@ MonLocalJobBeginMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-MonLocalJobBeginMsg::send_to_channel(MsgChannel * c) const
+MonLocalJobBeginMsg::serialize(int                    protocol_version,
+                               std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << hostid;
-    *c << job_id;
-    *c << stime;
-    *c << shorten_filename(file);
+    log_info() << "Serializing MonLocalJobBeginMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(hostid, out);
+    bytes::serialize(job_id, out);
+    bytes::serialize(stime, out);
+    bytes::serialize(shorten_filename(file), out);
 }
 
 void
-MonStatsMsg::fill_from_channel(MsgChannel * c)
+MonStatsMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> hostid;
     *c >> statmsg;
 }
 
 void
-MonStatsMsg::send_to_channel(MsgChannel * c) const
+MonStatsMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << hostid;
-    *c << statmsg;
+    log_info() << "Serializing MonStatsMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(hostid, out);
+    bytes::serialize(statmsg, out);
 }
 
 void
-StatusTextMsg::fill_from_channel(MsgChannel * c)
+StatusTextMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> text;
 }
 
 void
-StatusTextMsg::send_to_channel(MsgChannel * c) const
+StatusTextMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << text;
+    log_info() << "Serializing StatusTextMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(text, out);
 }
 
 void
-VerifyEnvMsg::fill_from_channel(MsgChannel * c)
+VerifyEnvMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> environment;
     *c >> target;
 }
 
 void
-VerifyEnvMsg::send_to_channel(MsgChannel * c) const
+VerifyEnvMsg::serialize(int protocol_version, std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << environment;
-    *c << target;
+    log_info() << "Serializing VerifyEnvnMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(environment, out);
+    bytes::serialize(target, out);
 }
 
 void
-VerifyEnvResultMsg::fill_from_channel(MsgChannel * c)
+VerifyEnvResultMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     uint32_t read_ok;
     *c >> read_ok;
     ok = read_ok != 0;
 }
 
 void
-VerifyEnvResultMsg::send_to_channel(MsgChannel * c) const
+VerifyEnvResultMsg::serialize(int                    protocol_version,
+                              std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << uint32_t(ok);
+    log_info() << "Serializing VerifyEnvResultMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(static_cast<uint32_t>(ok), out);
 }
 
 void
-BlacklistHostEnvMsg::fill_from_channel(MsgChannel * c)
+BlacklistHostEnvMsg::fill_from_channel(MsgChannel * c, int protocol_version)
 {
-    Msg::fill_from_channel(c);
+    Msg::fill_from_channel(c, protocol_version);
     *c >> environment;
     *c >> target;
     *c >> hostname;
 }
 
 void
-BlacklistHostEnvMsg::send_to_channel(MsgChannel * c) const
+BlacklistHostEnvMsg::serialize(int                    protocol_version,
+                               std::vector<uint8_t> & out) const
 {
-    Msg::send_to_channel(c);
-    *c << environment;
-    *c << target;
-    *c << hostname;
+    log_info() << "Serializing BlacklistHostEnvMsg" << std::endl;
+    Msg::serialize(protocol_version, out);
+    bytes::serialize(environment, out);
+    bytes::serialize(target, out);
+    bytes::serialize(hostname, out);
 }
 
 /*

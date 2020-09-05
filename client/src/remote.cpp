@@ -561,7 +561,7 @@ build_remote_int(CompileJob &        job,
         }
 
         if (output) {
-            if ((!crmsg->out.empty() || !crmsg->err.empty()) &&
+            if ((!crmsg->out_.empty() || !crmsg->err_.empty()) &&
                 output_needs_workaround(job)) {
                 delete crmsg;
                 log_warning() << "command needs stdout/stderr workaround, "
@@ -574,7 +574,7 @@ build_remote_int(CompileJob &        job,
                                   "workaround, recompiling locally");
             }
 
-            if (crmsg->err.find("file not found") != std::string::npos) {
+            if (crmsg->err_.find("file not found") != std::string::npos) {
                 delete crmsg;
                 log_warning() << "remote is missing file, recompiling locally"
                               << std::endl;
@@ -584,16 +584,16 @@ build_remote_int(CompileJob &        job,
             }
 
             ignore_result(
-                write(STDOUT_FILENO, crmsg->out.c_str(), crmsg->out.size()));
+                write(STDOUT_FILENO, crmsg->out_.c_str(), crmsg->out_.size()));
 
             if (colorify_wanted(job)) {
-                colorify_output(crmsg->err);
+                colorify_output(crmsg->err_);
             } else {
                 ignore_result(write(
-                    STDERR_FILENO, crmsg->err.c_str(), crmsg->err.size()));
+                    STDERR_FILENO, crmsg->err_.c_str(), crmsg->err_.size()));
             }
 
-            if (status && (crmsg->err.length() || crmsg->out.length())) {
+            if (status && (crmsg->err_.length() || crmsg->out_.length())) {
                 log_info() << "Compiled on " << hostname << std::endl;
             }
         }
@@ -877,7 +877,9 @@ build_remote(CompileJob &         job,
                 << torepeat << " times for " << job.targetPlatform() << "\n";
     }
 
-    std::map<std::string, std::string> versionfile_map, version_map;
+    using StringMap = std::map<std::string, std::string>;
+    StringMap    versionfile_map;
+    StringMap    version_map;
     Environments envs = rip_out_paths(_envs, version_map, versionfile_map);
 
     if (!envs.size()) {

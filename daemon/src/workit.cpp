@@ -97,8 +97,7 @@ work_it(CompileJob &        j,
         unsigned long int   mem_limit,
         int                 client_fd)
 {
-    rmsg.out.erase(rmsg.out.begin(), rmsg.out.end());
-    rmsg.out.erase(rmsg.out.begin(), rmsg.out.end());
+    rmsg.out_.erase(rmsg.out_.begin(), rmsg.out_.end());
 
     std::list<std::string> list = j.nonLocalFlags();
 
@@ -370,12 +369,11 @@ work_it(CompileJob &        j,
         }
 
 #if DEBUG_LEVEL > 0
-
         for (int f = STDERR_FILENO + 1; f < 4096; ++f) {
             long flags = fcntl(f, F_GETFD, 0);
             assert(flags < 0 || (flags & FD_CLOEXEC));
+            (void)flags;
         }
-
 #endif
 
         execv(argv[0], const_cast<char * const *>(argv)); // no return
@@ -443,7 +441,7 @@ work_it(CompileJob &        j,
         if (client_fd >= 0 && !fcmsg) {
             if (Msg * msg = client->get_msg(0, true)) {
                 if (input_complete) {
-                    rmsg.err.append("client cancelled\n");
+                    rmsg.err_.append("client cancelled\n");
                     return_value = EXIT_CLIENT_KILLED;
                     client_fd = -1;
                     kill(pid, SIGTERM);
@@ -624,7 +622,7 @@ work_it(CompileJob &        j,
 
                     if (bytes > 0) {
                         buffer[bytes] = 0;
-                        rmsg.out.append(buffer);
+                        rmsg.out_.append(buffer);
                     } else if (bytes == 0) {
                         if (-1 == close(sock_out[0])) {
                             log_perror("close failed");
@@ -640,7 +638,7 @@ work_it(CompileJob &        j,
 
                     if (bytes > 0) {
                         buffer[bytes] = 0;
-                        rmsg.err.append(buffer);
+                        rmsg.err_.append(buffer);
                     } else if (bytes == 0) {
                         if (-1 == close(sock_err[0])) {
                             log_perror("close failed");
@@ -665,12 +663,12 @@ work_it(CompileJob &        j,
                     }
 
                     if (shell_exit_status(status) != 0) {
-                        if (!rmsg.out.empty())
+                        if (!rmsg.out_.empty())
                             trace() << "compiler produced stdout output:\n"
-                                    << rmsg.out;
-                        if (!rmsg.err.empty())
+                                    << rmsg.out_;
+                        if (!rmsg.err_.empty())
                             trace() << "compiler produced stderr output:\n"
-                                    << rmsg.err;
+                                    << rmsg.err_;
                         unsigned long int mem_used =
                             ((ru.ru_minflt + ru.ru_majflt) * getpagesize()) /
                             1024;
@@ -679,18 +677,18 @@ work_it(CompileJob &        j,
                         const auto npos = std::string::npos;
 
                         if (((mem_used * 100) > (85 * mem_limit * 1024)) ||
-                            (rmsg.err.find("memory exhausted") != npos) ||
-                            (rmsg.err.find("out of memory") != npos) ||
-                            (rmsg.err.find("annot allocate memory") != npos) ||
-                            (rmsg.err.find(
+                            (rmsg.err_.find("memory exhausted") != npos) ||
+                            (rmsg.err_.find("out of memory") != npos) ||
+                            (rmsg.err_.find("annot allocate memory") != npos) ||
+                            (rmsg.err_.find(
                                  "failed to map segment from shared object") !=
                              npos) ||
-                            (rmsg.err.find("Assertion `NewElts && \"Out of "
-                                           "memory\"' failed") != npos) ||
-                            (rmsg.err.find("terminate called after throwing an "
-                                           "instance of 'std::bad_alloc'") !=
-                             npos) ||
-                            (rmsg.err.find(
+                            (rmsg.err_.find("Assertion `NewElts && \"Out of "
+                                            "memory\"' failed") != npos) ||
+                            (rmsg.err_.find(
+                                 "terminate called after throwing an "
+                                 "instance of 'std::bad_alloc'") != npos) ||
+                            (rmsg.err_.find(
                                  "llvm::MallocSlabAllocator::Allocate") !=
                              npos)) {
                             // the relation between ulimit and memory used is
@@ -712,7 +710,7 @@ work_it(CompileJob &        j,
                         if ((ret == 0 &&
                              long(buf.f_bavail) <
                                  ((10 * 1024 * 1024) / buf.f_bsize)) ||
-                            rmsg.err.find("o space left on device") !=
+                            rmsg.err_.find("no space left on device") !=
                                 std::string::npos) {
                             log_warning()
                                 << "Remote compilation failed, presumably "

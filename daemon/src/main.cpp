@@ -624,8 +624,25 @@ struct Daemon {
     determine_supported_features();
     bool
     maybe_stats(bool force_check = false);
+
+    template<typename T>
     bool
-    send_scheduler(const Msg & msg) __attribute_warn_unused_result__;
+    send_scheduler(const T & msg)
+    {
+        if (!scheduler) {
+            log_error() << "scheduler dead ?!" << std::endl;
+            return false;
+        }
+
+        if (!scheduler->send_msg(msg)) {
+            log_error() << "sending message to scheduler failed.." << std::endl;
+            close_scheduler();
+            return false;
+        }
+
+        return true;
+    }
+
     void
     close_scheduler();
     bool
@@ -890,23 +907,6 @@ Daemon::determine_supported_features()
     if (archive_read_support_format_tar(a) < ARCHIVE_WARN) // error
         log_error() << "No support for unpacking tar available." << std::endl;
     archive_read_free(a);
-}
-
-bool
-Daemon::send_scheduler(const Msg & msg)
-{
-    if (!scheduler) {
-        log_error() << "scheduler dead ?!" << std::endl;
-        return false;
-    }
-
-    if (!scheduler->send_msg(msg)) {
-        log_error() << "sending message to scheduler failed.." << std::endl;
-        close_scheduler();
-        return false;
-    }
-
-    return true;
 }
 
 bool
@@ -1706,19 +1706,19 @@ Daemon::create_env_finished(std::string env_key)
 }
 
 bool
-Daemon::handle_job_done(Client * cl, JobDoneMsg * m)
+Daemon::handle_job_done(Client * cl, JobDoneMsg * msg)
 {
     if (cl->status == Client::CLIENTWORK) {
         clients.active_processes--;
     }
 
     cl->status = Client::JOBDONE;
-    JobDoneMsg * msg = static_cast<JobDoneMsg *>(m);
     trace() << "handle_job_done " << msg->job_id << " " << msg->exitcode
             << std::endl;
 
-    if (!m->is_from_server() && (m->user_msec + m->sys_msec) <= m->real_msec) {
-        icecream_load += (m->user_msec + m->sys_msec) / num_cpus;
+    if (!msg->is_from_server() &&
+        (msg->user_msec + msg->sys_msec) <= msg->real_msec) {
+        icecream_load += (msg->user_msec + msg->sys_msec) / num_cpus;
     }
 
     assert(msg->job_id == cl->job_id);
@@ -1833,9 +1833,8 @@ Daemon::handle_compile_done(Client * client)
     assert(client->child_pid > 0);
     assert(client->pipe_from_child >= 0);
 
-    JobDoneMsg * msg = new JobDoneMsg(
+    JobDoneMsg msg(
         client->job->jobID(), -1, JobDoneMsg::FROM_SERVER, clients.size());
-    assert(msg);
     assert(current_kids > 0);
     current_kids--;
 
@@ -1844,15 +1843,15 @@ Daemon::handle_compile_done(Client * client)
 
     if (read(client->pipe_from_child, job_stat, sizeof(job_stat)) ==
         sizeof(job_stat)) {
-        msg->in_uncompressed = job_stat[JobStatistics::in_uncompressed];
-        msg->in_compressed = job_stat[JobStatistics::in_compressed];
-        msg->out_compressed = msg->out_uncompressed =
+        msg.in_uncompressed = job_stat[JobStatistics::in_uncompressed];
+        msg.in_compressed = job_stat[JobStatistics::in_compressed];
+        msg.out_compressed = msg.out_uncompressed =
             job_stat[JobStatistics::out_uncompressed];
-        end_status = msg->exitcode = job_stat[JobStatistics::exit_code];
-        msg->real_msec = job_stat[JobStatistics::real_msec];
-        msg->user_msec = job_stat[JobStatistics::user_msec];
-        msg->sys_msec = job_stat[JobStatistics::sys_msec];
-        msg->pfaults = job_stat[JobStatistics::sys_pfaults];
+        end_status = msg.exitcode = job_stat[JobStatistics::exit_code];
+        msg.real_msec = job_stat[JobStatistics::real_msec];
+        msg.user_msec = job_stat[JobStatistics::user_msec];
+        msg.sys_msec = job_stat[JobStatistics::sys_msec];
+        msg.pfaults = job_stat[JobStatistics::sys_pfaults];
     }
 
     close(client->pipe_from_child);
@@ -1868,11 +1867,10 @@ Daemon::handle_compile_done(Client * client)
                 << client->job->jobID() << std::endl;
     }
 
-    if (!send_scheduler(*msg))
+    if (!send_scheduler(msg))
         log_warning() << "failed sending scheduler about compile done "
                       << client->job->jobID() << std::endl;
     handle_end(client, end_status);
-    delete msg;
     return false;
 }
 
@@ -1929,7 +1927,8 @@ bool
 Daemon::handle_blacklist_host_env(Client * client, Msg * msg)
 {
     // just forward
-    assert(dynamic_cast<BlacklistHostEnvMsg *>(msg));
+    auto * blacklist_msg = dynamic_cast<BlacklistHostEnvMsg *>(msg);
+    assert(blacklist_msg != nullptr);
     assert(client);
     (void)client;
 
@@ -1937,7 +1936,7 @@ Daemon::handle_blacklist_host_env(Client * client, Msg * msg)
         return false;
     }
 
-    return send_scheduler(*msg);
+    return send_scheduler(*blacklist_msg);
 }
 
 void
@@ -2071,6 +2070,7 @@ bool
 Daemon::handle_get_cs(Client * client, Msg * msg)
 {
     GetCSMsg * umsg = dynamic_cast<GetCSMsg *>(msg);
+    assert(umsg != nullptr);
     assert(client);
     client->status = Client::WAITFORCS;
     umsg->client_id = client->client_id;
@@ -2104,7 +2104,9 @@ bool
 Daemon::handle_local_job(Client * client, Msg * msg)
 {
     client->status = Client::LINKJOB;
-    client->outfile = dynamic_cast<JobLocalBeginMsg *>(msg)->outfile;
+    auto * job_local_begin_msg = dynamic_cast<JobLocalBeginMsg *>(msg);
+    assert(job_local_begin_msg != nullptr);
+    client->outfile = job_local_begin_msg->outfile;
     return true;
 }
 

@@ -7,9 +7,15 @@ set(CMAKE_CXX_STANDARD 11)
 
 option(ICECREAM_LTO "Build with link-time optimization" OFF)
 option(ICECREAM_PIE "Build position-independent executables" ON)
+option(ICECREAM_SYSTEM_ASIO "Build against system ASIO" OFF)
 
 set(ICECREAM_DEBUG_LEVEL 0 CACHE STRING "Debug logging level")
 set(ICECREAM_RUNDIR /var/run CACHE STRING "PID file directory")
+
+if(ICECREAM_SYSTEM_ASIO)
+    #TODO
+    message(FATAL_ERROR "Builds against system ASIO not yet supported")
+endif()
 
 add_library(copts_pie INTERFACE)
 target_compile_options(copts_pie INTERFACE -fpie)
@@ -33,6 +39,8 @@ target_compile_definitions(copts_common INTERFACE
     RUNDIR="${ICECREAM_RUNDIR}")
 target_link_libraries(copts_common INTERFACE
     $<$<BOOL:${ICECREAM_PIE}>:copts_pie>)
+
+add_subdirectory(3rdparty)
 
 add_subdirectory(client)
 add_subdirectory(compilerwrapper)
