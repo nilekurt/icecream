@@ -1,7 +1,7 @@
 // No icecream ;(
 
-#ifndef _DAEMON_EXCEPTION_H_
-#define _DAEMON_EXCEPTION_H_
+#ifndef _DAEMON_EXCEPTION_HH_
+#define _DAEMON_EXCEPTION_HH_
 
 class DaemonException : public std::exception {
     int code_;
@@ -15,4 +15,4 @@ public:
     }
 };
 
-#endif // _DAEMON_EXCEPTION_H_
+#endif // _DAEMON_EXCEPTION_HH_

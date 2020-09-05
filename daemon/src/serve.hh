@@ -22,44 +22,23 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef ICECREAM_WORKIT_H
-#define ICECREAM_WORKIT_H
+#ifndef _SERVE_HH_
+#define _SERVE_HH_
 
-#include "services_job.h"
-
-extern "C" {
-#include <sys/types.h>
-}
-
-#include <exception>
 #include <string>
 
+class CompileJob;
 class MsgChannel;
-class CompileResultMsg;
 
-namespace JobStatistics {
-enum job_stat_fields
-{
-    in_compressed,
-    in_uncompressed,
-    out_uncompressed,
-    exit_code,
-    real_msec,
-    user_msec,
-    sys_msec,
-    sys_pfaults
-};
-}
+extern int nice_level;
 
 int
-work_it(CompileJob &        j,
-        unsigned int        job_stats[],
-        MsgChannel *        client,
-        CompileResultMsg &  msg,
-        const std::string & tmp_root,
-        const std::string & build_path,
-        const std::string & file_name,
-        unsigned long int   mem_limit,
-        int                 client_fd);
+handle_connection(const std::string & basedir,
+                  CompileJob *        job,
+                  MsgChannel *        serv,
+                  int &               out_fd,
+                  unsigned int        mem_limit,
+                  uid_t               user_uid,
+                  gid_t               user_gid);
 
-#endif
+#endif // _SERVE_HH_

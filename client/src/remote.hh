@@ -1,7 +1,7 @@
-#ifndef _REMOTE_H_
-#define _REMOTE_H_
+#ifndef _REMOTE_HH_
+#define _REMOTE_HH_
 
-#include "comm.h"
+#include "comm.hh"
 
 extern std::string remote_daemon;
 
@@ -17,4 +17,4 @@ build_remote(CompileJob &         job,
 Environments
 parse_icecc_version(const std::string & target, const std::string & prefix);
 
-#endif // _REMOTE_H_
+#endif // _REMOTE_HH_

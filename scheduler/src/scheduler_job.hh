@@ -22,10 +22,10 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef SCHEDULER_JOB_H
-#define SCHEDULER_JOB_H
+#ifndef _SCHEDULER_JOB_HH_
+#define _SCHEDULER_JOB_HH_
 
-#include "comm.h"
+#include "comm.hh"
 
 #include <ctime>
 #include <list>
@@ -167,4 +167,4 @@ private:
     int m_niceness; // nice priority (0-20)
 };
 
-#endif
+#endif // _SCHEDULER_JOB_HH_

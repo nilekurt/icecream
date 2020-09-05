@@ -22,15 +22,15 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "workit.h"
+#include "workit.hh"
 
-#include "comm.h"
+#include "comm.hh"
 #include "exitcode.h"
-#include "ggc.h"
-#include "logging.h"
+#include "ggc.hh"
+#include "logging.hh"
 #include "pipes.h"
-#include "platform.h"
-#include "services_util.h"
+#include "platform.hh"
+#include "services_util.hh"
 #include "tempfile.h"
 
 extern "C" {

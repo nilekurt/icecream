@@ -28,9 +28,9 @@
 
 //#include "config.h"
 
-#include "getifaddrs.h"
+#include "getifaddrs.hh"
 
-#include "logging.h"
+#include "logging.hh"
 
 extern "C" {
 #include <netinet/in.h>

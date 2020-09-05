@@ -21,13 +21,13 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "client_util.h"
+#include "client_util.hh"
 
 #include "exitcode.h"
-#include "local.h"
-#include "logging.h"
+#include "local.hh"
+#include "logging.hh"
 #include "ncpus.h"
-#include "services_job.h"
+#include "services_job.hh"
 
 extern "C" {
 #include <pwd.h>

@@ -21,8 +21,8 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef ICECREAM_COMPILE_JOB_H
-#define ICECREAM_COMPILE_JOB_H
+#ifndef _SERVICES_JOB_HH_
+#define _SERVICES_JOB_HH_
 
 #include <iostream>
 #include <list>
@@ -290,4 +290,4 @@ concat_args(const std::list<std::string> & args)
     return str.str() + "'";
 }
 
-#endif
+#endif // _SERVICES_JOB_HH_

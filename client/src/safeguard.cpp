@@ -33,9 +33,9 @@
  * recursively invoking itself, thinking it's the real compiler.
  **/
 
-#include "safeguard.h"
+#include "safeguard.hh"
 
-#include "logging.h"
+#include "logging.hh"
 
 const int SafeguardMaxLevel = 2;
 

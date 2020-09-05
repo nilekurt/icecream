@@ -24,8 +24,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef _CLIENT_ARGV_H_
-#define _CLIENT_ARGV_H_
+#ifndef _ARGV_H_
+#define _ARGV_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,4 +40,4 @@ freeargv(char ** vector);
 }
 #endif
 
-#endif
+#endif // _ARGV_H_

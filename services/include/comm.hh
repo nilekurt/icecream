@@ -22,10 +22,10 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef ICECREAM_COMM_H
-#define ICECREAM_COMM_H
+#ifndef _COMM_HH_
+#define _COMM_HH_
 
-#include "services_job.h"
+#include "services_job.hh"
 
 #ifdef __linux__
 #include <cstdint>
@@ -1103,4 +1103,4 @@ public:
     std::string hostname;
 };
 
-#endif
+#endif // _COMM_HH_

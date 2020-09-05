@@ -1,7 +1,7 @@
-#ifndef _ARG_H_
-#define _ARG_H_
+#ifndef _ARG_HH_
+#define _ARG_HH_
 
-#include "comm.h"
+#include "comm.hh"
 
 bool
 analyse_argv(const char * const *     argv,
@@ -9,4 +9,4 @@ analyse_argv(const char * const *     argv,
              bool                     icerun,
              std::list<std::string> * extrafiles);
 
-#endif // _ARG_H_
+#endif // _ARG_HH_

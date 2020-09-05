@@ -21,12 +21,12 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef PLATFORM_H
-#define PLATFORM_H
+#ifndef _PLATFORM_HH_
+#define _PLATFORM_HH_
 
 #include <string>
 
 const std::string &
 determine_platform();
 
-#endif
+#endif // _PLATFORM_HH_

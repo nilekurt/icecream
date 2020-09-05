@@ -22,17 +22,17 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "remote.h"
+#include "remote.hh"
 
-#include "call_cpp.h"
-#include "client_util.h"
+#include "call_cpp.hh"
+#include "client_util.hh"
 #include "errors.h"
 #include "exitcode.h"
-#include "local.h"
-#include "logging.h"
+#include "local.hh"
+#include "logging.hh"
 #include "md5.h"
 #include "pipes.h"
-#include "services_util.h"
+#include "services_util.hh"
 #include "tempfile.h"
 
 extern "C" {

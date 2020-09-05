@@ -21,11 +21,11 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "services_job.h"
+#include "services_job.hh"
 
 #include "exitcode.h"
-#include "logging.h"
-#include "platform.h"
+#include "logging.hh"
+#include "platform.hh"
 
 using namespace std;
 

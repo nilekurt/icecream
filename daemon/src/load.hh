@@ -21,10 +21,10 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef ICECREAM_LOAD_H
-#define ICECREAM_LOAD_H
+#ifndef _LOAD_HH_
+#define _LOAD_HH_
 
-#include "comm.h"
+#include "comm.hh"
 
 // 'hint' is used to approximate the load, whenever getloadavg() is unavailable.
 void
@@ -34,4 +34,4 @@ fill_stats(unsigned long & myidleload,
            StatsMsg *      msg,
            unsigned int    hint);
 
-#endif
+#endif // _LOAD_HH_

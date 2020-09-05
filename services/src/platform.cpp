@@ -21,9 +21,9 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "platform.h"
+#include "platform.hh"
 
-#include "logging.h"
+#include "logging.hh"
 
 extern "C" {
 #include <sys/utsname.h>

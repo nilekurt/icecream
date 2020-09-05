@@ -22,18 +22,17 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "serve.h"
+#include "serve.hh"
 
-#include "comm.h"
-#include "daemon_exception.h"
-#include "environment.h"
+#include "daemon_exception.hh"
+#include "environment.hh"
 #include "exitcode.h"
-#include "file_util.h"
-#include "logging.h"
-#include "services_job.h"
-#include "services_util.h"
+#include "file_util.hh"
+#include "logging.hh"
+#include "services_job.hh"
+#include "services_util.hh"
 #include "tempfile.h"
-#include "workit.h"
+#include "workit.hh"
 
 extern "C" {
 #include <fcntl.h>

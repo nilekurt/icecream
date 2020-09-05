@@ -23,11 +23,11 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "comm.h"
+#include "comm.hh"
 
-#include "getifaddrs.h"
-#include "logging.h"
-#include "services_job.h"
+#include "getifaddrs.hh"
+#include "logging.hh"
+#include "services_job.hh"
 
 extern "C" {
 #include <arpa/inet.h>

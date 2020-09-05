@@ -42,8 +42,8 @@
   1999-05-03 lpd Original version.
  */
 
-#ifndef md5_INCLUDED
-#define md5_INCLUDED
+#ifndef _MD5_H_
+#define _MD5_H_
 
 typedef unsigned char md5_byte_t; /* 8-bit byte */
 typedef unsigned int  md5_word_t; /* 32-bit word */
@@ -75,4 +75,4 @@ md5_finish(md5_state_t * pms, md5_byte_t digest[16]);
 } /* end extern "C" */
 #endif
 
-#endif /* md5_INCLUDED */
+#endif // _MD5_H_

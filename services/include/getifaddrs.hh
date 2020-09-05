@@ -20,8 +20,8 @@
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 */
 
-#ifndef GETIFADDRS_H
-#define GETIFADDRS_H
+#ifndef _GETIFADDRS_HH_
+#define _GETIFADDRS_HH_
 
 /**
  * 02-12-26, tim@tjansen.de: added kde_ prefix, fallback-code,
@@ -111,4 +111,4 @@ build_address_for_interface(struct sockaddr_in & myaddr,
                             const std::string &  interface,
                             int                  port);
 
-#endif
+#endif // _GETIFADDRS_HH_

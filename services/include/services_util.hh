@@ -19,8 +19,8 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#ifndef ICECREAM_UTIL_H
-#define ICECREAM_UTIL_H
+#ifndef _SERVICES_UTIL_HH_
+#define _SERVICES_UTIL_HH_
 
 extern "C" {
 #include <sys/poll.h>
@@ -76,4 +76,4 @@ pollfd_is_set(const std::vector<pollfd> & pollfds,
 std::string
 supported_features_to_string(unsigned int features);
 
-#endif
+#endif // _SERVICES_UTIL_HH_

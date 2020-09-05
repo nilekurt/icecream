@@ -22,13 +22,13 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "comm.h"
-#include "compileserver.h"
-#include "getifaddrs.h"
-#include "logging.h"
-#include "scheduler_job.h"
-#include "services_job.h"
-#include "services_util.h"
+#include "comm.hh"
+#include "compileserver.hh"
+#include "getifaddrs.hh"
+#include "logging.hh"
+#include "scheduler_job.hh"
+#include "services_job.hh"
+#include "services_util.hh"
 
 #ifndef _GNU_SOURCE
 // getopt_long

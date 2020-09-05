@@ -4,7 +4,7 @@
 // code based on gcc - Copyright (C) 1999, 2000, 2001, 2002 Free Software
 // Foundation, Inc.
 
-#include "ggc.h"
+#include "ggc.hh"
 
 #include <algorithm>
 

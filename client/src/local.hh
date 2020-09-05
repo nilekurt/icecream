@@ -1,7 +1,7 @@
-#ifndef _LOCAL_H_
-#define _LOCAL_H_
+#ifndef _LOCAL_HH_
+#define _LOCAL_HH_
 
-#include "comm.h"
+#include "comm.hh"
 
 int
 build_local(CompileJob & job, MsgChannel * daemon, struct rusage * usage = 0);
@@ -28,4 +28,4 @@ compiler_get_arch_flags(const CompileJob &       job,
                         bool                     mtune,
                         std::list<std::string> & args);
 
-#endif // _LOCAL_H_
+#endif // _LOCAL_HH_

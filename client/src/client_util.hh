@@ -21,10 +21,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef _CLIENT_UTIL_H_
-#define _CLIENT_UTIL_H_
+#ifndef _CLIENT_UTIL_HH_
+#define _CLIENT_UTIL_HH_
 
-#include "services_util.h"
+#include "services_util.hh"
 
 #include <string>
 
@@ -68,4 +68,4 @@ public:
     }
 };
 
-#endif
+#endif // _CLIENT_UTIL_HH_
