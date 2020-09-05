@@ -51,10 +51,7 @@ public:
         LINE
     };
 
-    CompileServer(const int         fd,
-                  struct sockaddr * addr,
-                  const socklen_t   len,
-                  const bool        text_based);
+    CompileServer(const int fd, struct sockaddr * addr, const socklen_t len);
 
     void
     pick_new_id();

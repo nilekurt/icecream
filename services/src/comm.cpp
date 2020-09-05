@@ -494,22 +494,7 @@ MsgChannel::update_state()
             // fallthrough
         case NEED_LEN:
 
-            if (text_based) {
-                // Skip any leading whitespace
-                for (; inofs < intogo; ++inofs)
-                    if (inbuf[inofs] >= ' ') {
-                        break;
-                    }
-
-                // Skip until next newline
-                for (inmsglen = 0; inmsglen < inofs - intogo; ++inmsglen)
-                    if (inbuf[intogo + inmsglen] < ' ') {
-                        instate = HAS_MSG;
-                        break;
-                    }
-
-                break;
-            } else if (inofs - intogo >= 4) {
+            if (inofs - intogo >= 4) {
                 (*this) >> inmsglen;
 
                 if (inmsglen > MAX_MSG_SIZE) {
@@ -951,7 +936,7 @@ MsgChannel::read_line(std::string & line)
 {
     /* XXX handle DOS and MAC line endings and null bytes as std::string
      * endings.  */
-    if (!text_based || inofs < intogo) {
+    if (true || inofs < intogo) {
         line = "";
     } else {
         line = std::string(inbuf + intogo, inmsglen);
@@ -1087,7 +1072,7 @@ MsgChannel::eq_ip(const MsgChannel & s) const
 MsgChannel *
 Service::createChannel(int fd, struct sockaddr * _a, socklen_t _l)
 {
-    MsgChannel * c = new MsgChannel(fd, _a, _l, false);
+    MsgChannel * c = new MsgChannel(fd, _a, _l);
 
     if (!c->wait_for_protocol()) {
         delete c;
@@ -1097,8 +1082,7 @@ Service::createChannel(int fd, struct sockaddr * _a, socklen_t _l)
     return c;
 }
 
-MsgChannel::MsgChannel(int _fd, struct sockaddr * _a, socklen_t _l, bool text)
-    : fd(_fd)
+MsgChannel::MsgChannel(int _fd, struct sockaddr * _a, socklen_t _l) : fd(_fd)
 {
     addr_len = (sizeof(struct sockaddr) > _l) ? sizeof(struct sockaddr) : _l;
 
@@ -1129,7 +1113,6 @@ MsgChannel::MsgChannel(int _fd, struct sockaddr * _a, socklen_t _l, bool text)
     inofs = 0;
     intogo = 0;
     eof = false;
-    text_based = text;
     set_error_recursion = false;
     maximum_remote_protocol = -1;
 
@@ -1181,20 +1164,15 @@ MsgChannel::MsgChannel(int _fd, struct sockaddr * _a, socklen_t _l, bool text)
         log_perror("MsgChannel fcntl() 2");
     }
 
-    if (text_based) {
-        instate = NEED_LEN;
-        protocol = PROTOCOL_VERSION;
-    } else {
-        instate = NEED_PROTO;
-        protocol = -1;
-        unsigned char vers[4] = {PROTOCOL_VERSION, 0, 0, 0};
-        // writeuint32 ((uint32_t) PROTOCOL_VERSION);
-        writefull(vers, 4);
+    instate = NEED_PROTO;
+    protocol = -1;
+    unsigned char vers[4] = {PROTOCOL_VERSION, 0, 0, 0};
+    // writeuint32 ((uint32_t) PROTOCOL_VERSION);
+    writefull(vers, 4);
 
-        if (!flush_writebuf(true)) {
-            protocol = 0; // unusable
-            set_error();
-        }
+    if (!flush_writebuf(true)) {
+        protocol = 0; // unusable
+        set_error();
     }
 
     last_talk = time(nullptr);
@@ -1369,13 +1347,9 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
 
     size_t intogo_old = intogo;
 
-    if (text_based) {
-        type = M_TEXT;
-    } else {
-        uint32_t t;
-        *this >> t;
-        type = (enum MsgType)t;
-    }
+    uint32_t t;
+    *this >> t;
+    type = (enum MsgType)t;
 
     switch (type) {
         case M_UNKNOWN: set_error(); return nullptr;
@@ -1404,7 +1378,7 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
         case M_JOB_LOCAL_DONE: m = new JobLocalDoneMsg; break;
         case M_MON_LOCAL_JOB_BEGIN: m = new MonLocalJobBeginMsg; break;
         case M_TRANFER_ENV: m = new EnvTransferMsg; break;
-        case M_TEXT: m = new TextMsg; break;
+        case M_TEXT_DEPRECATED: break;
         case M_GET_INTERNALS: m = new GetInternalStatus; break;
         case M_STATUS_TEXT: m = new StatusTextMsg; break;
         case M_CS_CONF: m = new ConfCSMsg; break;
@@ -1422,7 +1396,7 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
 
     m->fill_from_channel(this);
 
-    if (!text_based) {
+    if (true) {
         if (intogo - intogo_old != inmsglen) {
             log_error()
                 << "internal error - message not read correctly, message size "
@@ -1452,22 +1426,18 @@ MsgChannel::send_msg(const Msg & m, int flags)
     chop_output();
     size_t msgtogo_old = msgtogo;
 
-    if (text_based) {
-        m.send_to_channel(this);
-    } else {
-        *this << (uint32_t)0;
-        m.send_to_channel(this);
-        uint32_t out_len = msgtogo - msgtogo_old - 4;
-        if (out_len > MAX_MSG_SIZE) {
-            log_error()
-                << "internal error - size of message to write exceeds max size:"
-                << out_len << std::endl;
-            set_error();
-            return false;
-        }
-        uint32_t len = htonl(out_len);
-        memcpy(msgbuf + msgtogo_old, &len, 4);
+    *this << (uint32_t)0;
+    m.send_to_channel(this);
+    uint32_t out_len = msgtogo - msgtogo_old - 4;
+    if (out_len > MAX_MSG_SIZE) {
+        log_error()
+            << "internal error - size of message to write exceeds max size:"
+            << out_len << std::endl;
+        set_error();
+        return false;
     }
+    uint32_t len = htonl(out_len);
+    memcpy(msgbuf + msgtogo_old, &len, 4);
 
     if ((flags & SendBulkOnly) && msgtogo < 4096) {
         return true;
@@ -2025,10 +1995,6 @@ Msg::fill_from_channel(MsgChannel *)
 void
 Msg::send_to_channel(MsgChannel * c) const
 {
-    if (c->is_text_based()) {
-        return;
-    }
-
     *c << (uint32_t)type;
 }
 
@@ -2780,18 +2746,6 @@ MonStatsMsg::send_to_channel(MsgChannel * c) const
     Msg::send_to_channel(c);
     *c << hostid;
     *c << statmsg;
-}
-
-void
-TextMsg::fill_from_channel(MsgChannel * c)
-{
-    c->read_line(text);
-}
-
-void
-TextMsg::send_to_channel(MsgChannel * c) const
-{
-    c->write_line(text);
 }
 
 void

@@ -39,9 +39,8 @@ unsigned int CompileServer::s_hostIdCounter = 0;
 
 CompileServer::CompileServer(const int         fd,
                              struct sockaddr * addr,
-                             const socklen_t   len,
-                             const bool        text_based)
-    : MsgChannel(fd, addr, len, text_based),
+                             const socklen_t   len)
+    : MsgChannel(fd, addr, len),
       m_remotePort(0),
       m_hostId(0),
       m_nodeName(),

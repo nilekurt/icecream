@@ -133,7 +133,7 @@ enum MsgType
 
     M_TRANFER_ENV, // = 'X'
 
-    M_TEXT,
+    M_TEXT_DEPRECATED,
     M_STATUS_TEXT, // = 'Z'
     M_GET_INTERNALS,
 
@@ -221,12 +221,6 @@ public:
         return instate != HAS_MSG && eof;
     }
 
-    bool
-    is_text_based(void) const
-    {
-        return text_based;
-    }
-
     void
     readcompressed(unsigned char ** buf, size_t & _uclen, size_t & _clen);
     void
@@ -270,7 +264,7 @@ public:
     time_t      last_talk;
 
 protected:
-    MsgChannel(int _fd, struct sockaddr *, socklen_t, bool text = false);
+    MsgChannel(int _fd, struct sockaddr *, socklen_t);
 
     bool
     wait_for_protocol();
@@ -311,7 +305,6 @@ protected:
 
     uint32_t inmsglen;
     bool     eof;
-    bool     text_based;
 
 private:
     friend class Service;
@@ -1013,22 +1006,6 @@ public:
 
     uint32_t    hostid;
     std::string statmsg;
-};
-
-class TextMsg final : public Msg {
-public:
-    TextMsg() : Msg(M_TEXT) {}
-
-    TextMsg(const std::string & _text) : Msg(M_TEXT), text(_text) {}
-
-    TextMsg(const TextMsg & m) : Msg(M_TEXT), text(m.text) {}
-
-    virtual void
-    fill_from_channel(MsgChannel * c) final;
-    virtual void
-    send_to_channel(MsgChannel * c) const final;
-
-    std::string text;
 };
 
 class StatusTextMsg final : public Msg {
