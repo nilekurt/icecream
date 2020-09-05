@@ -73,16 +73,10 @@ main(int argc, char * argv[])
 
     const auto separator_pos = args[0].rfind('/');
 
-#if 0
-    char ** args = new char *[argc + 2];
-    args[0] = new char[strlen(argv[0]) + 20];
-    char * separator = strrchr(args[0], '/');
-#endif
-
     if (separator_pos == std::string::npos) {
         args[0].resize(0);
     } else {
-        args[0].resize(separator_pos);
+        args[0].resize(separator_pos + 1);
     }
 
     if (is_clang) {
@@ -151,8 +145,9 @@ main(int argc, char * argv[])
 #if DEBUG_LEVEL > 0
     std::cout << "Args2:\n";
 
-    for (int i = 0; i < pos; ++i) {
-        std::cout << args[i] << 'n';
+    const auto end = args.end();
+    for (auto it = args.begin(); it != end; ++it) {
+        std::cout << *it << '\n';
     }
 
     std::cout << '\n';
