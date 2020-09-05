@@ -34,63 +34,68 @@ if clang is to be used as well, that will either call clang or the real gcc.
 Which one depends on an extra argument added by icecream.
 */
 
-#include <assert.h>
-#include <sstream>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+extern "C" {
 #include <unistd.h>
+}
 
-//#define DEBUG
+#include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <vector>
 
 int
 main(int argc, char * argv[])
 {
-    bool iscxx = false;
-    int  argv0len = strlen(argv[0]);
+    bool        is_cxx = false;
+    std::size_t argv0len = strlen(argv[0]);
 
     if (argv0len > 2 && argv[0][argv0len - 1] == '+' &&
         argv[0][argv0len - 2] == '+') {
-        iscxx = true;
+        is_cxx = true;
     }
 
-#ifdef DEBUG
-    fprintf(stderr, "Args1:\n");
+#if DEBUG_LEVEL > 0
+    std::cout << "Args1:\n";
 
     for (int i = 0; i < argc; ++i) {
-        fprintf(stderr, "%s\n", argv[i]);
+        std::cout << argv[i] << '\n';
     }
-
-    fprintf(stderr, "\n");
+    std::cout << '\n';
 #endif
-    bool isclang = argc >= 2 && strcmp(argv[1], "clang") ==
-                                    0; // the extra argument from icecream
+
+    bool is_clang = (argc >= 2) && (strcmp(argv[1], "clang") ==
+                                    0); // the extra argument from icecream
     // 1 extra for -no-canonical-prefixes
+    std::vector<std::string> args{};
+    args.emplace_back(argv[0], argv0len);
+
+    const auto separator_pos = args[0].rfind('/');
+
+#if 0
     char ** args = new char *[argc + 2];
     args[0] = new char[strlen(argv[0]) + 20];
-    strcpy(args[0], argv[0]);
     char * separator = strrchr(args[0], '/');
+#endif
 
-    if (separator == nullptr) {
-        args[0][0] = '\0';
+    if (separator_pos == std::string::npos) {
+        args[0].resize(0);
     } else {
-        separator[1] = '\0'; // after the separator
+        args[0].resize(separator_pos);
     }
 
-    if (isclang) {
-        strcat(args[0], "clang");
-    } else if (iscxx) {
-        strcat(args[0], "g++.bin");
+    if (is_clang) {
+        args[0].append("clang");
+    } else if (is_cxx) {
+        args[0].append("g++.bin");
     } else {
-        strcat(args[0], "gcc.bin");
+        args[0].append("gcc.bin");
     }
 
-    int pos = 1;
-
-    if (isclang) {
-        args[pos++] =
-            strdup("-no-canonical-prefixes"); // otherwise clang tries to access
-                                              // /proc/self/exe
+    if (is_clang) {
+        args.emplace_back("-no-canonical-prefixes"); // otherwise clang tries to
+                                                     // access /proc/self/exe
         // clang wants the -x argument early, otherwise it seems to ignore it
         // (and treats the file as already preprocessed)
         int x_arg_pos = -1;
@@ -102,8 +107,8 @@ main(int argc, char * argv[])
                 (strcmp(argv[i + 1], "c") == 0 ||
                  strcmp(argv[i + 1], "c++") == 0)) {
                 x_arg_pos = i;
-                args[pos++] = strdup("-x");
-                args[pos++] = strdup(argv[i + 1]);
+                args.emplace_back("-x");
+                args.emplace_back(argv[i + 1]);
                 break;
             }
         }
@@ -135,17 +140,15 @@ main(int argc, char * argv[])
                 continue; // and skip this one
             }
 
-            args[pos++] = strdup(argv[i]);
+            args.emplace_back(argv[i]);
         }
-    } else { // !isclang , just copy the arguments
+    } else { // !is_clang , just copy the arguments
         for (int i = 1; i < argc; ++i) {
-            args[pos++] = strdup(argv[i]);
+            args.emplace_back(argv[i]);
         }
     }
 
-    args[pos++] = nullptr;
-    assert(pos <= argc + 2);
-#ifdef DEBUG
+#if DEBUG_LEVEL > 0
     fprintf(stderr, "Args2:\n");
 
     for (int i = 0; i < pos; ++i) {
@@ -154,9 +157,27 @@ main(int argc, char * argv[])
 
     fprintf(stderr, "\n");
 #endif
-    execv(args[0], args);
-    std::ostringstream errmsg;
-    errmsg << "execv " << args[0] << " failed";
-    perror(errmsg.str().c_str());
-    exit(1);
+
+    const auto execv_args = [&args] {
+        std::vector<char *> result{};
+        result.reserve(args.size() + 1);
+
+        std::transform(args.begin(),
+                       args.end(),
+                       std::back_inserter(result),
+                       [](std::string & x) {
+                           // Since C++11 string data is guaranteed to end with
+                           // a null character
+                           return &x[0];
+                       });
+        result.emplace_back(nullptr);
+
+        return result;
+    }();
+
+    execv(execv_args[0], execv_args.data());
+    // Execution should stop here if the execv call was successful
+    std::cerr << "execv " << args[0] << " failed:\n" << strerror(errno) << '\n';
+
+    return -1;
 }
