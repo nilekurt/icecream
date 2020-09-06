@@ -198,7 +198,7 @@ create_native(char ** args)
 #error "Path to libexec must be set"
 #endif // LIBEXECDIR
 
-    argv.push_back(strdup(LIBEXECDIR "/icecc-create-env"));
+    argv.push_back(strdup(BINDIR "/icecc-create-env"));
     argv.push_back(strdup(compiler.c_str()));
 
     for (int extracount = 0; extrafiles[extracount]; extracount++) {
