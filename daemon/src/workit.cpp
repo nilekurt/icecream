@@ -370,12 +370,11 @@ work_it(CompileJob &        j,
         }
 
 #if DEBUG_LEVEL > 0
-
         for (int f = STDERR_FILENO + 1; f < 4096; ++f) {
             long flags = fcntl(f, F_GETFD, 0);
             assert(flags < 0 || (flags & FD_CLOEXEC));
+            (void)flags;
         }
-
 #endif
 
         execv(argv[0], const_cast<char * const *>(argv)); // no return
