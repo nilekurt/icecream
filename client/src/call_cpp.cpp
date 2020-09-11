@@ -34,6 +34,8 @@
 #include "logging.hh"
 #include "safeguard.hh"
 
+#include <algorithm>
+
 namespace {
 
 bool
@@ -55,6 +57,104 @@ dcc_is_preprocessed(const std::string & sfile)
     }
 
     return false;
+}
+
+std::list<std::string>
+filtered_flags(const CompileJob & job)
+{
+    auto result = job.localFlags();
+
+    result.splice(result.end(), job.restFlags());
+
+    for (auto it = result.begin(); it != result.end();) {
+        /* This has a duplicate meaning. it can either include a file
+           for preprocessing or a precompiled header. decide which one. */
+        if ((*it) == "-include") {
+            ++it;
+
+            if (it != result.end()) {
+                std::string p = (*it);
+
+                if (access(p.c_str(), R_OK) < 0 &&
+                    access((p + ".gch").c_str(), R_OK) == 0) {
+                    // PCH is useless for preprocessing, ignore the flag.
+                    auto o = --it;
+                    ++it;
+                    result.erase(o);
+                    o = it++;
+                    result.erase(o);
+                }
+            }
+        } else if ((*it) == "-include-pch") {
+            auto o = it;
+            ++it;
+            if (it != result.end()) {
+                std::string p = (*it);
+                if (access(p.c_str(), R_OK) == 0) {
+                    // PCH is useless for preprocessing (and probably
+                    // slows things down), ignore the flag.
+                    result.erase(o);
+                    o = it++;
+                    result.erase(o);
+                }
+            }
+        } else if ((*it) == "-fpch-preprocess") {
+            // This would add #pragma GCC pch_preprocess to the
+            // preprocessed output, which would make the remote GCC try
+            // to load the PCH directly and fail. Just drop it. This may
+            // cause a build failure if the -include check above failed
+            // to detect usage of a PCH file (e.g. because it needs to
+            // be found in one of the -I paths, which we don't check)
+            // and the header file itself doesn't exist.
+            result.erase(it++);
+        } else if ((*it) == "-fmodules" || (*it) == "-fcxx-modules" ||
+                   (*it) == "-fmodules-ts" ||
+                   (*it).find("-fmodules-cache-path=") == 0) {
+            // Clang modules, handle like with PCH, remove the flags and
+            // compile remotely without them.
+            result.erase(it++);
+        } else {
+            ++it;
+        }
+    }
+
+    return result;
+}
+
+std::vector<std::string>
+make_argv(const CompileJob & job)
+{
+    auto flags = filtered_flags(job);
+
+    std::vector<std::string> result{};
+
+    if (dcc_is_preprocessed(job.inputFile())) {
+        /* already preprocessed, great.
+           write the file to the fdwrite (using cat) */
+        result.emplace_back("/bin/cat");
+        result.emplace_back(job.inputFile());
+        return result;
+    }
+
+    result.reserve(flags.size() + 4);
+    result.emplace_back(find_compiler(job));
+
+    result.insert(result.end(),
+                  std::make_move_iterator(flags.begin()),
+                  std::make_move_iterator(flags.end()));
+
+    result.emplace_back("-E");
+    result.emplace_back(job.inputFile());
+
+    if (compiler_only_rewrite_includes(job)) {
+        if (compiler_is_clang(job)) {
+            result.emplace_back("-frewrite-includes");
+        } else { // gcc
+            result.emplace_back("-fdirectives-only");
+        }
+    }
+
+    return result;
 }
 
 } // namespace
@@ -104,101 +204,16 @@ call_cpp(CompileJob & job, int fdwrite, int fdread)
         _exit(ret);
     }
 
-    char ** argv;
+    auto argv = make_argv(job);
 
-    if (dcc_is_preprocessed(job.inputFile())) {
-        /* already preprocessed, great.
-           write the file to the fdwrite (using cat) */
-        argv = new char *[2 + 1];
-        argv[0] = strdup("/bin/cat");
-        argv[1] = strdup(job.inputFile().c_str());
-        argv[2] = nullptr;
-    } else {
-        std::list<std::string> flags = job.localFlags();
-        appendList(flags, job.restFlags());
-
-        for (auto it = flags.begin(); it != flags.end();) {
-            /* This has a duplicate meaning. it can either include a file
-               for preprocessing or a precompiled header. decide which one.  */
-            if ((*it) == "-include") {
-                ++it;
-
-                if (it != flags.end()) {
-                    std::string p = (*it);
-
-                    if (access(p.c_str(), R_OK) < 0 &&
-                        access((p + ".gch").c_str(), R_OK) == 0) {
-                        // PCH is useless for preprocessing, ignore the flag.
-                        auto o = --it;
-                        ++it;
-                        flags.erase(o);
-                        o = it++;
-                        flags.erase(o);
-                    }
-                }
-            } else if ((*it) == "-include-pch") {
-                auto o = it;
-                ++it;
-                if (it != flags.end()) {
-                    std::string p = (*it);
-                    if (access(p.c_str(), R_OK) == 0) {
-                        // PCH is useless for preprocessing (and probably slows
-                        // things down), ignore the flag.
-                        flags.erase(o);
-                        o = it++;
-                        flags.erase(o);
-                    }
-                }
-            } else if ((*it) == "-fpch-preprocess") {
-                // This would add #pragma GCC pch_preprocess to the preprocessed
-                // output, which would make the remote GCC try to load the PCH
-                // directly and fail. Just drop it. This may cause a build
-                // failure if the -include check above failed to detect usage of
-                // a PCH file (e.g. because it needs to be found in one of the
-                // -I paths, which we don't check) and the header file itself
-                // doesn't exist.
-                flags.erase(it++);
-            } else if ((*it) == "-fmodules" || (*it) == "-fcxx-modules" ||
-                       (*it) == "-fmodules-ts" ||
-                       (*it).find("-fmodules-cache-path=") == 0) {
-                // Clang modules, handle like with PCH, remove the flags and
-                // compile remotely without them.
-                flags.erase(it++);
-            } else {
-                ++it;
-            }
-        }
-
-        int argc = flags.size();
-        argc++; // the program
-        argc += 2; // -E file.i
-        argc += 1; // -frewrite-includes / -fdirectives-only
-        argv = new char *[argc + 1];
-        argv[0] = strdup(find_compiler(job).c_str());
-        int i = 1;
-
-        for (auto it = flags.begin(); it != flags.end(); ++it) {
-            argv[i++] = strdup(it->c_str());
-        }
-
-        argv[i++] = strdup("-E");
-        argv[i++] = strdup(job.inputFile().c_str());
-
-        if (compiler_only_rewrite_includes(job)) {
-            if (compiler_is_clang(job)) {
-                argv[i++] = strdup("-frewrite-includes");
-            } else { // gcc
-                argv[i++] = strdup("-fdirectives-only");
-            }
-        }
-
-        argv[i++] = nullptr;
+    if (argv.empty()) {
+        throw std::runtime_error("Argument list is empty");
     }
 
     std::string argstxt = argv[0];
-    for (int i = 1; argv[i] != nullptr; ++i) {
+    for (auto it = argv.begin() + 1; it != argv.end(); ++it) {
         argstxt += ' ';
-        argstxt += argv[i];
+        argstxt += *it;
     }
     trace() << "preparing source to send: " << argstxt << std::endl;
 
@@ -210,10 +225,20 @@ call_cpp(CompileJob & job, int fdwrite, int fdread)
     }
 
     dcc_increment_safeguard(SafeguardStepCompiler);
-    execv(argv[0], argv);
-    int                exitcode = (errno == ENOENT ? 127 : 126);
-    std::ostringstream errmsg;
-    errmsg << "execv " << argv[0] << " failed";
-    log_perror(errmsg.str());
+
+    const std::vector<char *> argv_char_ptr = [&argv] {
+        std::vector<char *> result(argv.size() + 1, nullptr);
+
+        std::transform(argv.begin(),
+                       argv.end(),
+                       result.begin(),
+                       [](std::string & s) { return &s[0]; });
+
+        return result;
+    }();
+
+    execv(argv_char_ptr[0], argv_char_ptr.data());
+    int exitcode = (errno == ENOENT ? 127 : 126);
+    log_perror("execv " + argv[0] + " failed");
     _exit(exitcode);
 }
