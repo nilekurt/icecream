@@ -28,6 +28,7 @@
 #include "getifaddrs.hh"
 #include "logging.hh"
 #include "services_job.hh"
+#include "type_id.hh"
 
 extern "C" {
 #include <arpa/inet.h>
@@ -47,6 +48,8 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <functional>
+#include <unordered_map>
 #include <vector>
 
 // Prefer least amount of CPU use
@@ -776,10 +779,10 @@ MsgChannel::read_environments(Environments & envs)
 }
 
 void
-MsgChannel::readcompressed(unsigned char ** uncompressed_buf,
-                           size_t &         _uclen,
-                           size_t &         _clen)
+MsgChannel::readcompressed(std::vector<uint8_t> & buffer, size_t & _clen)
 {
+    buffer.clear();
+
     lzo_uint uncompressed_len;
     lzo_uint compressed_len;
     uint32_t tmp;
@@ -794,8 +797,6 @@ MsgChannel::readcompressed(unsigned char ** uncompressed_buf,
         if (proto != C_LZO && proto != C_ZSTD) {
             log_error() << "Unknown compression protocol " << proto
                         << std::endl;
-            *uncompressed_buf = nullptr;
-            _uclen = 0;
             _clen = compressed_len;
             set_error();
             return;
@@ -810,58 +811,41 @@ MsgChannel::readcompressed(unsigned char ** uncompressed_buf,
         inofs < intogo + compressed_len) {
         log_error() << "failure in readcompressed() length checking"
                     << std::endl;
-        *uncompressed_buf = nullptr;
-        uncompressed_len = 0;
-        _uclen = uncompressed_len;
         _clen = compressed_len;
         set_error();
         return;
     }
 
-    *uncompressed_buf = new unsigned char[uncompressed_len];
+    buffer.resize(uncompressed_len);
 
     if (proto == C_ZSTD && uncompressed_len && compressed_len) {
         const void * compressed_buf = inbuf + intogo;
-        size_t       ret = ZSTD_decompress(*uncompressed_buf,
-                                     uncompressed_len,
-                                     compressed_buf,
-                                     compressed_len);
+        size_t       ret = ZSTD_decompress(
+            buffer.data(), uncompressed_len, compressed_buf, compressed_len);
         if (ZSTD_isError(ret)) {
             log_error() << "internal error - decompression of data from "
                         << dump().c_str()
                         << " failed: " << ZSTD_getErrorName(ret) << std::endl;
-            delete[] * uncompressed_buf;
-            *uncompressed_buf = nullptr;
-            uncompressed_len = 0;
+            buffer.clear();
         }
     } else if (proto == C_LZO && uncompressed_len && compressed_len) {
-        const lzo_byte * compressed_buf = (lzo_byte *)(inbuf + intogo);
-        lzo_voidp        wrkmem = (lzo_voidp)malloc(LZO1X_MEM_COMPRESS);
-        int              ret = lzo1x_decompress(compressed_buf,
+        const lzo_bytep compressed_buf =
+            reinterpret_cast<lzo_bytep>(inbuf + intogo);
+        std::array<uint8_t, LZO1X_MEM_DECOMPRESS> wrkmem{};
+        int ret = lzo1x_decompress(compressed_buf,
                                    compressed_len,
-                                   *uncompressed_buf,
+                                   buffer.data(),
                                    &uncompressed_len,
-                                   wrkmem);
-        free(wrkmem);
+                                   static_cast<lzo_voidp>(wrkmem.data()));
 
-        if (ret != LZO_E_OK) {
-            /* This should NEVER happen.
-            Remove the buffer, and indicate there is nothing in it,
-            but don't reset the compressed_len, so our caller know,
-            that there actually was something read in.  */
-            log_error() << "internal error - decompression of data from "
-                        << dump().c_str() << " failed: " << ret << std::endl;
-            delete[] * uncompressed_buf;
-            *uncompressed_buf = nullptr;
-            uncompressed_len = 0;
-        }
+        assert(ret == LZO_E_OK && uncompressed_len == buffer.size());
+        (void)ret;
     }
 
     /* Read over everything used, _also_ if there was some error.
        If we couldn't decode it now, it won't get better in the future,
        so just ignore this hunk.  */
     intogo += compressed_len;
-    _uclen = uncompressed_len;
     _clen = compressed_len;
 }
 
@@ -972,10 +956,11 @@ MsgChannel::set_error(bool silent)
         // anymore, so try to fetch last status from the other side, if
         // available.
         set_error_recursion = true;
-        Msg * msg = get_msg(2, true);
-        if (msg && msg->type == M_STATUS_TEXT) {
-            log_error() << "remote status: "
-                        << static_cast<StatusTextMsg *>(msg)->text << std::endl;
+        auto msg = get_msg(2, true);
+
+        auto * stmsg = ext::get_if<StatusTextMsg>(&msg);
+        if (stmsg != nullptr) {
+            log_error() << "remote status: " << stmsg->text << std::endl;
         }
         set_error_recursion = false;
     }
@@ -1316,15 +1301,12 @@ MsgChannel::wait_for_msg(int timeout)
     return true;
 }
 
-Msg *
+Msg
 MsgChannel::get_msg(int timeout, bool eofAllowed)
 {
-    Msg *        m = nullptr;
-    enum MsgType type;
-
     if (!wait_for_msg(timeout)) {
         // trace() << "!wait_for_msg()\n";
-        return nullptr;
+        return ext::monostate{};
     }
 
     /* If we've seen the EOF, and we don't have a complete message,
@@ -1335,86 +1317,100 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
             trace() << "saw eof without complete msg! " << instate << std::endl;
             set_error();
         }
-        return nullptr;
+        return ext::monostate{};
     }
 
     if (!has_msg()) {
         trace() << "saw eof without msg! " << eof << " " << instate
                 << std::endl;
         set_error();
-        return nullptr;
+        return ext::monostate{};
     }
 
     size_t intogo_old = intogo;
 
     uint32_t t;
     *this >> t;
-    type = (enum MsgType)t;
+    const auto type = static_cast<MsgType>(t);
 
-    switch (type) {
-        case M_UNKNOWN: set_error(); return nullptr;
-        case M_PING: m = new PingMsg; break;
-        case M_END: m = new EndMsg; break;
-        case M_GET_CS: m = new GetCSMsg; break;
-        case M_USE_CS: m = new UseCSMsg; break;
-        case M_NO_CS: m = new NoCSMsg; break;
-        case M_COMPILE_FILE:
-            m = new CompileFileMsg(new CompileJob, true);
-            break;
-        case M_FILE_CHUNK: m = new FileChunkMsg; break;
-        case M_COMPILE_RESULT: m = new CompileResultMsg; break;
-        case M_JOB_BEGIN: m = new JobBeginMsg; break;
-        case M_JOB_DONE: m = new JobDoneMsg; break;
-        case M_LOGIN: m = new LoginMsg; break;
-        case M_STATS: m = new StatsMsg; break;
-        case M_GET_NATIVE_ENV: m = new GetNativeEnvMsg; break;
-        case M_NATIVE_ENV: m = new UseNativeEnvMsg; break;
-        case M_MON_LOGIN: m = new MonLoginMsg; break;
-        case M_MON_GET_CS: m = new MonGetCSMsg; break;
-        case M_MON_JOB_BEGIN: m = new MonJobBeginMsg; break;
-        case M_MON_JOB_DONE: m = new MonJobDoneMsg; break;
-        case M_MON_STATS: m = new MonStatsMsg; break;
-        case M_JOB_LOCAL_BEGIN: m = new JobLocalBeginMsg; break;
-        case M_JOB_LOCAL_DONE: m = new JobLocalDoneMsg; break;
-        case M_MON_LOCAL_JOB_BEGIN: m = new MonLocalJobBeginMsg; break;
-        case M_TRANFER_ENV: m = new EnvTransferMsg; break;
-        case M_TEXT_DEPRECATED: break;
-        case M_GET_INTERNALS: m = new GetInternalStatus; break;
-        case M_STATUS_TEXT: m = new StatusTextMsg; break;
-        case M_CS_CONF: m = new ConfCSMsg; break;
-        case M_VERIFY_ENV: m = new VerifyEnvMsg; break;
-        case M_VERIFY_ENV_RESULT: m = new VerifyEnvResultMsg; break;
-        case M_BLACKLIST_HOST_ENV: m = new BlacklistHostEnvMsg; break;
-        case M_TIMEOUT: break;
-    }
-
-    if (!m) {
-        trace() << "no message type" << std::endl;
+    using M = MsgType;
+    static const std::unordered_map<MsgType, std::function<Msg()>> msg_map{
+        {M::UNKNOWN,
+         [this] {
+             set_error();
+             return ext::monostate{};
+         }},
+        {M::PING, [] { return PingMsg{}; }},
+        {M::END, [] { return EndMsg{}; }},
+        {M::GET_CS, [] { return GetCSMsg{}; }},
+        {M::USE_CS, [] { return UseCSMsg{}; }},
+        {M::NO_CS, [] { return NoCSMsg{}; }},
+        {M::COMPILE_FILE, [] { return CompileFileMsg{}; }},
+        {M::FILE_CHUNK, [] { return FileChunkMsg{}; }},
+        {M::COMPILE_RESULT, [] { return CompileResultMsg{}; }},
+        {M::JOB_BEGIN, [] { return JobBeginMsg{}; }},
+        {M::JOB_DONE, [] { return JobDoneMsg{}; }},
+        {M::LOGIN, [] { return LoginMsg{}; }},
+        {M::STATS, [] { return StatsMsg{}; }},
+        {M::GET_NATIVE_ENV, [] { return GetNativeEnvMsg{}; }},
+        {M::USE_NATIVE_ENV, [] { return UseNativeEnvMsg{}; }},
+        {M::MON_LOGIN, [] { return MonLoginMsg{}; }},
+        {M::MON_GET_CS, [] { return MonGetCSMsg{}; }},
+        {M::MON_JOB_BEGIN, [] { return MonJobBeginMsg{}; }},
+        {M::MON_JOB_DONE, [] { return MonJobDoneMsg{}; }},
+        {M::MON_STATS, [] { return MonStatsMsg{}; }},
+        {M::JOB_LOCAL_BEGIN, [] { return JobLocalBeginMsg{}; }},
+        {M::JOB_LOCAL_DONE, [] { return JobLocalDoneMsg{}; }},
+        {M::MON_LOCAL_JOB_BEGIN, [] { return MonLocalJobBeginMsg{}; }},
+        {M::ENV_TRANSFER, [] { return EnvTransferMsg{}; }},
+        {M::TEXT_DEPRECATED, [] { return Msg{}; }},
+        {M::GET_INTERNAL_STATUS, [] { return GetInternalStatusMsg{}; }},
+        {M::STATUS_TEXT, [] { return StatusTextMsg{}; }},
+        {M::CONF_CS, [] { return ConfCSMsg{}; }},
+        {M::VERIFY_ENV, [] { return VerifyEnvMsg{}; }},
+        {M::VERIFY_ENV_RESULT, [] { return VerifyEnvResultMsg{}; }},
+        {M::BLACKLIST_HOST_ENV, [] { return BlacklistHostEnvMsg{}; }},
+        {M::TIMEOUT, [] { return ext::monostate{}; }}};
+    auto it = msg_map.find(type);
+    if (it == msg_map.end()) {
         set_error();
-        return nullptr;
+        return ext::monostate{};
     }
 
-    m->fill_from_channel(this);
+    auto msg = it->second();
 
-    if (true) {
-        if (intogo - intogo_old != inmsglen) {
-            log_error()
-                << "internal error - message not read correctly, message size "
-                << inmsglen << " read " << (intogo - intogo_old) << std::endl;
-            delete m;
-            set_error();
-            return nullptr;
-        }
+    bool fail = ext::visit(make_visitor(
+                               [this](ext::monostate & /*unused*/) {
+                                   trace() << "no message type" << std::endl;
+                                   set_error();
+                                   return true;
+                               },
+                               [this](auto & m) {
+                                   m.fill_from_channel(this);
+                                   return false;
+                               }),
+                           msg);
+
+    if (fail) {
+        return ext::monostate{};
+    }
+
+    if (intogo - intogo_old != inmsglen) {
+        log_error()
+            << "internal error - message not read correctly, message size "
+            << inmsglen << " read " << (intogo - intogo_old) << std::endl;
+        set_error();
+        return ext::monostate{};
     }
 
     instate = NEED_LEN;
     update_state();
 
-    return m;
+    return msg;
 }
 
 bool
-MsgChannel::send_msg(const Msg & m, int flags)
+MsgChannel::send_msg(const Msg & msg, int flags)
 {
     if (instate == ERROR) {
         return false;
@@ -1426,8 +1422,29 @@ MsgChannel::send_msg(const Msg & m, int flags)
     chop_output();
     size_t msgtogo_old = msgtogo;
 
+    // Length placeholder
     *this << (uint32_t)0;
-    m.send_to_channel(this);
+
+    bool fail = ext::visit(make_visitor(
+                               [this](const ext::monostate & /*unused*/) {
+                                   trace() << "no message type" << std::endl;
+                                   set_error();
+                                   return true;
+                               },
+                               [this](const auto & m) {
+                                   using T = std::decay_t<decltype(m)>;
+
+                                   *this << static_cast<uint32_t>(
+                                       icecream::type_id<T>());
+
+                                   m.send_to_channel(this);
+                                   return false;
+                               }),
+                           msg);
+    if (fail) {
+        return false;
+    }
+
     uint32_t out_len = msgtogo - msgtogo_old - 4;
     if (out_len > MAX_MSG_SIZE) {
         log_error()
@@ -1987,17 +2004,6 @@ get_netnames(int timeout, int port)
     return DiscoverSched::getNetnames(timeout, port);
 }
 
-void
-Msg::fill_from_channel(MsgChannel *)
-{
-}
-
-void
-Msg::send_to_channel(MsgChannel * c) const
-{
-    *c << (uint32_t)type;
-}
-
 GetCSMsg::GetCSMsg(const Environments & envs,
                    const std::string &  f,
                    CompileJob::Language _lang,
@@ -2009,8 +2015,7 @@ GetCSMsg::GetCSMsg(const Environments & envs,
                    unsigned int         _required_features,
                    int                  _niceness,
                    unsigned int         _client_count)
-    : Msg(M_GET_CS),
-      versions(envs),
+    : versions(envs),
       filename(f),
       lang(_lang),
       count(_count),
@@ -2032,7 +2037,7 @@ GetCSMsg::GetCSMsg(const Environments & envs,
 void
 GetCSMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
+
     c->read_environments(versions);
     *c >> filename;
     uint32_t _lang;
@@ -2081,7 +2086,7 @@ GetCSMsg::fill_from_channel(MsgChannel * c)
 void
 GetCSMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
+
     c->write_environments(versions);
     *c << shorten_filename(filename);
     *c << (uint32_t)lang;
@@ -2115,7 +2120,7 @@ GetCSMsg::send_to_channel(MsgChannel * c) const
 void
 UseCSMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
+
     *c >> job_id;
     *c >> port;
     *c >> hostname;
@@ -2133,7 +2138,7 @@ UseCSMsg::fill_from_channel(MsgChannel * c)
 void
 UseCSMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
+
     *c << job_id;
     *c << port;
     *c << hostname;
@@ -2149,7 +2154,7 @@ UseCSMsg::send_to_channel(MsgChannel * c) const
 void
 NoCSMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
+
     *c >> job_id;
     *c >> client_id;
 }
@@ -2157,7 +2162,7 @@ NoCSMsg::fill_from_channel(MsgChannel * c)
 void
 NoCSMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
+
     *c << job_id;
     *c << client_id;
 }
@@ -2165,7 +2170,7 @@ NoCSMsg::send_to_channel(MsgChannel * c) const
 void
 CompileFileMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
+
     uint32_t    id, lang;
     std::string version;
     *c >> lang;
@@ -2226,7 +2231,7 @@ CompileFileMsg::fill_from_channel(MsgChannel * c)
 void
 CompileFileMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
+
     *c << (uint32_t)job->language();
     *c << job->jobID();
 
@@ -2281,46 +2286,23 @@ CompileFileMsg::remote_compiler_name() const
     return job->language() == CompileJob::Lang_CXX ? "g++" : "gcc";
 }
 
-CompileJob *
-CompileFileMsg::takeJob()
-{
-    assert(deleteit);
-    deleteit = false;
-    return job;
-}
-
 void
 FileChunkMsg::fill_from_channel(MsgChannel * c)
 {
-    if (del_buf) {
-        delete[] buffer;
-    }
+    buffer.clear();
 
-    buffer = nullptr;
-    del_buf = true;
-
-    Msg::fill_from_channel(c);
-    c->readcompressed(&buffer, len, compressed);
+    c->readcompressed(buffer, compressed);
 }
 
 void
 FileChunkMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
-    c->writecompressed(buffer, len, compressed);
-}
-
-FileChunkMsg::~FileChunkMsg()
-{
-    if (del_buf) {
-        delete[] buffer;
-    }
+    c->writecompressed(buffer.data(), buffer.size(), compressed);
 }
 
 void
 CompileResultMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     uint32_t _status = 0;
     *c >> err;
     *c >> out;
@@ -2339,7 +2321,6 @@ CompileResultMsg::fill_from_channel(MsgChannel * c)
 void
 CompileResultMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << err;
     *c << out;
     *c << status;
@@ -2352,7 +2333,6 @@ CompileResultMsg::send_to_channel(MsgChannel * c) const
 void
 JobBeginMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> job_id;
     *c >> stime;
     if (IS_PROTOCOL_39(c)) {
@@ -2363,7 +2343,6 @@ JobBeginMsg::fill_from_channel(MsgChannel * c)
 void
 JobBeginMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << job_id;
     *c << stime;
     if (IS_PROTOCOL_39(c)) {
@@ -2374,7 +2353,6 @@ JobBeginMsg::send_to_channel(MsgChannel * c) const
 void
 JobLocalBeginMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> stime;
     *c >> outfile;
     *c >> id;
@@ -2383,7 +2361,6 @@ JobLocalBeginMsg::fill_from_channel(MsgChannel * c)
 void
 JobLocalBeginMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << stime;
     *c << outfile;
     *c << id;
@@ -2392,14 +2369,12 @@ JobLocalBeginMsg::send_to_channel(MsgChannel * c) const
 void
 JobLocalDoneMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> job_id;
 }
 
 void
 JobLocalDoneMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << job_id;
 }
 
@@ -2407,11 +2382,7 @@ JobDoneMsg::JobDoneMsg(int          id,
                        int          exit,
                        unsigned int _flags,
                        unsigned int _client_count)
-    : Msg(M_JOB_DONE),
-      exitcode(exit),
-      flags(_flags),
-      job_id(id),
-      client_count(_client_count)
+    : exitcode(exit), flags(_flags), job_id(id), client_count(_client_count)
 {
     real_msec = 0;
     user_msec = 0;
@@ -2426,7 +2397,6 @@ JobDoneMsg::JobDoneMsg(int          id,
 void
 JobDoneMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     uint32_t _exitcode = 255;
     *c >> job_id;
     *c >> _exitcode;
@@ -2453,7 +2423,6 @@ JobDoneMsg::fill_from_channel(MsgChannel * c)
 void
 JobDoneMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << job_id;
     if (!IS_PROTOCOL_39(c) && (flags & UnknownJobId)) {
         *c << (uint32_t)200;
@@ -2497,12 +2466,11 @@ JobDoneMsg::set_job_id(uint32_t jobId)
     flags &= ~(uint32_t)UnknownJobId;
 }
 
-LoginMsg::LoginMsg(unsigned int        myport,
+LoginMsg::LoginMsg(uint32_t            myport,
                    const std::string & _nodename,
                    const std::string & _host_platform,
                    unsigned int        myfeatures)
-    : Msg(M_LOGIN),
-      port(myport),
+    : port(myport),
       max_kids(0),
       noremote(false),
       chroot_possible(false),
@@ -2521,7 +2489,6 @@ LoginMsg::LoginMsg(unsigned int        myport,
 void
 LoginMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> port;
     *c >> max_kids;
     c->read_environments(envs);
@@ -2547,7 +2514,6 @@ LoginMsg::fill_from_channel(MsgChannel * c)
 void
 LoginMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << port;
     *c << max_kids;
     c->write_environments(envs);
@@ -2566,7 +2532,6 @@ LoginMsg::send_to_channel(MsgChannel * c) const
 void
 ConfCSMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> max_scheduler_pong;
     *c >> max_scheduler_ping;
     std::string bench_source; // unused, kept for backwards compatibility
@@ -2576,7 +2541,6 @@ ConfCSMsg::fill_from_channel(MsgChannel * c)
 void
 ConfCSMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << max_scheduler_pong;
     *c << max_scheduler_ping;
     std::string bench_source;
@@ -2586,7 +2550,6 @@ ConfCSMsg::send_to_channel(MsgChannel * c) const
 void
 StatsMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> load;
     *c >> loadAvg1;
     *c >> loadAvg5;
@@ -2597,7 +2560,6 @@ StatsMsg::fill_from_channel(MsgChannel * c)
 void
 StatsMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << load;
     *c << loadAvg1;
     *c << loadAvg5;
@@ -2608,8 +2570,6 @@ StatsMsg::send_to_channel(MsgChannel * c) const
 void
 GetNativeEnvMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
-
     if (IS_PROTOCOL_32(c)) {
         *c >> compiler;
         *c >> extrafiles;
@@ -2622,8 +2582,6 @@ GetNativeEnvMsg::fill_from_channel(MsgChannel * c)
 void
 GetNativeEnvMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
-
     if (IS_PROTOCOL_32(c)) {
         *c << compiler;
         *c << extrafiles;
@@ -2635,21 +2593,18 @@ GetNativeEnvMsg::send_to_channel(MsgChannel * c) const
 void
 UseNativeEnvMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> nativeVersion;
 }
 
 void
 UseNativeEnvMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << nativeVersion;
 }
 
 void
 EnvTransferMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> name;
     *c >> target;
 }
@@ -2657,7 +2612,6 @@ EnvTransferMsg::fill_from_channel(MsgChannel * c)
 void
 EnvTransferMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << name;
     *c << target;
 }
@@ -2666,7 +2620,6 @@ void
 MonGetCSMsg::fill_from_channel(MsgChannel * c)
 {
     if (IS_PROTOCOL_29(c)) {
-        Msg::fill_from_channel(c);
         *c >> filename;
         uint32_t _lang;
         *c >> _lang;
@@ -2683,7 +2636,6 @@ void
 MonGetCSMsg::send_to_channel(MsgChannel * c) const
 {
     if (IS_PROTOCOL_29(c)) {
-        Msg::send_to_channel(c);
         *c << shorten_filename(filename);
         *c << (uint32_t)lang;
     } else {
@@ -2697,7 +2649,6 @@ MonGetCSMsg::send_to_channel(MsgChannel * c) const
 void
 MonJobBeginMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> job_id;
     *c >> stime;
     *c >> hostid;
@@ -2706,7 +2657,6 @@ MonJobBeginMsg::fill_from_channel(MsgChannel * c)
 void
 MonJobBeginMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << job_id;
     *c << stime;
     *c << hostid;
@@ -2715,7 +2665,6 @@ MonJobBeginMsg::send_to_channel(MsgChannel * c) const
 void
 MonLocalJobBeginMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> hostid;
     *c >> job_id;
     *c >> stime;
@@ -2725,7 +2674,6 @@ MonLocalJobBeginMsg::fill_from_channel(MsgChannel * c)
 void
 MonLocalJobBeginMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << hostid;
     *c << job_id;
     *c << stime;
@@ -2735,7 +2683,6 @@ MonLocalJobBeginMsg::send_to_channel(MsgChannel * c) const
 void
 MonStatsMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> hostid;
     *c >> statmsg;
 }
@@ -2743,7 +2690,6 @@ MonStatsMsg::fill_from_channel(MsgChannel * c)
 void
 MonStatsMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << hostid;
     *c << statmsg;
 }
@@ -2751,21 +2697,18 @@ MonStatsMsg::send_to_channel(MsgChannel * c) const
 void
 StatusTextMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> text;
 }
 
 void
 StatusTextMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << text;
 }
 
 void
 VerifyEnvMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> environment;
     *c >> target;
 }
@@ -2773,7 +2716,6 @@ VerifyEnvMsg::fill_from_channel(MsgChannel * c)
 void
 VerifyEnvMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << environment;
     *c << target;
 }
@@ -2781,7 +2723,6 @@ VerifyEnvMsg::send_to_channel(MsgChannel * c) const
 void
 VerifyEnvResultMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     uint32_t read_ok;
     *c >> read_ok;
     ok = read_ok != 0;
@@ -2790,14 +2731,12 @@ VerifyEnvResultMsg::fill_from_channel(MsgChannel * c)
 void
 VerifyEnvResultMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << uint32_t(ok);
 }
 
 void
 BlacklistHostEnvMsg::fill_from_channel(MsgChannel * c)
 {
-    Msg::fill_from_channel(c);
     *c >> environment;
     *c >> target;
     *c >> hostname;
@@ -2806,7 +2745,6 @@ BlacklistHostEnvMsg::fill_from_channel(MsgChannel * c)
 void
 BlacklistHostEnvMsg::send_to_channel(MsgChannel * c) const
 {
-    Msg::send_to_channel(c);
     *c << environment;
     *c << target;
     *c << hostname;

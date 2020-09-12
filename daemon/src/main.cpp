@@ -565,27 +565,27 @@ struct Daemon {
     void
     answer_client_requests();
     bool
-    handle_transfer_env(Client *         client,
-                        EnvTransferMsg * msg) __attribute_warn_unused_result__;
+    handle_transfer_env(Client * client, const EnvTransferMsg & msg)
+        __attribute_warn_unused_result__;
     bool
     handle_env_install_child_done(Client * client);
     bool
     finish_transfer_env(Client * client, bool cancel = false);
     bool
-    handle_get_native_env(Client * client, GetNativeEnvMsg * msg)
+    handle_get_native_env(Client * client, const GetNativeEnvMsg & msg)
         __attribute_warn_unused_result__;
     bool
     finish_get_native_env(Client * client, std::string env_key);
     void
     handle_old_request();
     bool
-    handle_compile_file(Client * client,
-                        Msg *    msg) __attribute_warn_unused_result__;
+    handle_compile_file(Client *         client,
+                        CompileFileMsg & msg) __attribute_warn_unused_result__;
     bool
     handle_activity(Client * client) __attribute_warn_unused_result__;
     bool
-    handle_file_chunk_env(Client * client,
-                          Msg *    msg) __attribute_warn_unused_result__;
+    handle_file_chunk_env(Client *    client,
+                          const Msg & msg) __attribute_warn_unused_result__;
     void
     handle_end(Client * client, int exitcode);
     int
@@ -593,27 +593,28 @@ struct Daemon {
     void
     clear_children();
     int
-    scheduler_use_cs(UseCSMsg * msg) __attribute_warn_unused_result__;
+    scheduler_use_cs(const UseCSMsg & msg) __attribute_warn_unused_result__;
     int
-    scheduler_no_cs(NoCSMsg * msg) __attribute_warn_unused_result__;
+    scheduler_no_cs(const NoCSMsg & msg) __attribute_warn_unused_result__;
     bool
-    handle_get_cs(Client * client, Msg * msg) __attribute_warn_unused_result__;
+    handle_get_cs(Client *   client,
+                  GetCSMsg & msg) __attribute_warn_unused_result__;
     bool
-    handle_local_job(Client * client,
-                     Msg *    msg) __attribute_warn_unused_result__;
+    handle_job_local_begin(Client * client, const JobLocalBeginMsg & msg)
+        __attribute_warn_unused_result__;
     bool
-    handle_job_done(Client *     cl,
-                    JobDoneMsg * m) __attribute_warn_unused_result__;
+    handle_job_done(Client *           cl,
+                    const JobDoneMsg & msg) __attribute_warn_unused_result__;
     bool
     handle_compile_done(Client * client) __attribute_warn_unused_result__;
     bool
-    handle_verify_env(Client *       client,
-                      VerifyEnvMsg * msg) __attribute_warn_unused_result__;
+    handle_verify_env(Client * client, const VerifyEnvMsg & msg)
+        __attribute_warn_unused_result__;
     bool
-    handle_blacklist_host_env(Client * client,
-                              Msg *    msg) __attribute_warn_unused_result__;
+    handle_blacklist_host_env(Client * client, const BlacklistHostEnvMsg & msg)
+        __attribute_warn_unused_result__;
     int
-    handle_cs_conf(ConfCSMsg * msg);
+    handle_cs_conf(const ConfCSMsg & msg);
     std::string
     dump_internals() const;
     std::string
@@ -1107,41 +1108,41 @@ Daemon::scheduler_get_internals()
 }
 
 int
-Daemon::scheduler_use_cs(UseCSMsg * msg)
+Daemon::scheduler_use_cs(const UseCSMsg & msg)
 {
-    Client * c = clients.find_by_client_id(msg->client_id);
-    trace() << "scheduler_use_cs " << msg->job_id << " " << msg->client_id
-            << " " << c << " " << msg->hostname << " " << remote_name
-            << std::endl;
+    Client * c = clients.find_by_client_id(msg.client_id);
+    trace() << "scheduler_use_cs " << msg.job_id << " " << msg.client_id << " "
+            << c << " " << msg.hostname << " " << remote_name << std::endl;
 
     if (!c) {
         if (send_scheduler(JobDoneMsg(
-                msg->job_id, 107, JobDoneMsg::FROM_SUBMITTER, clients.size()))) {
+                msg.job_id, 107, JobDoneMsg::FROM_SUBMITTER, clients.size()))) {
             return 0;
         }
 
         return 1;
     }
 
-    if (msg->hostname == remote_name && int(msg->port) == daemon_port) {
-        c->usecsmsg = new UseCSMsg(msg->host_platform,
+    if (msg.hostname == remote_name &&
+        static_cast<int>(msg.port) == daemon_port) {
+        c->usecsmsg = new UseCSMsg(msg.host_platform,
                                    "127.0.0.1",
                                    daemon_port,
-                                   msg->job_id,
+                                   msg.job_id,
                                    true,
                                    1,
-                                   msg->matched_job_id);
+                                   msg.matched_job_id);
         c->status = Client::PENDING_USE_CS;
     } else {
-        c->usecsmsg = new UseCSMsg(msg->host_platform,
-                                   msg->hostname,
-                                   msg->port,
-                                   msg->job_id,
+        c->usecsmsg = new UseCSMsg(msg.host_platform,
+                                   msg.hostname,
+                                   msg.port,
+                                   msg.job_id,
                                    true,
                                    1,
-                                   msg->matched_job_id);
+                                   msg.matched_job_id);
 
-        if (!c->channel->send_msg(*msg)) {
+        if (!c->channel->send_msg(msg)) {
             handle_end(c, 143);
             return 0;
         }
@@ -1149,21 +1150,21 @@ Daemon::scheduler_use_cs(UseCSMsg * msg)
         c->status = Client::WAITCOMPILE;
     }
 
-    c->job_id = msg->job_id;
+    c->job_id = msg.job_id;
 
     return 0;
 }
 
 int
-Daemon::scheduler_no_cs(NoCSMsg * msg)
+Daemon::scheduler_no_cs(const NoCSMsg & msg)
 {
-    Client * c = clients.find_by_client_id(msg->client_id);
-    trace() << "scheduler_no_cs " << msg->job_id << " " << msg->client_id << " "
+    Client * c = clients.find_by_client_id(msg.client_id);
+    trace() << "scheduler_no_cs " << msg.job_id << " " << msg.client_id << " "
             << c << " " << std::endl;
 
     if (!c) {
         if (send_scheduler(JobDoneMsg(
-                msg->job_id, 107, JobDoneMsg::FROM_SUBMITTER, clients.size()))) {
+                msg.job_id, 107, JobDoneMsg::FROM_SUBMITTER, clients.size()))) {
             return 0;
         }
 
@@ -1171,16 +1172,16 @@ Daemon::scheduler_no_cs(NoCSMsg * msg)
     }
 
     c->usecsmsg = new UseCSMsg(
-        std::string(), "127.0.0.1", daemon_port, msg->job_id, true, 1, 0);
+        std::string(), "127.0.0.1", daemon_port, msg.job_id, true, 1, 0);
     c->status = Client::PENDING_USE_CS;
 
-    c->job_id = msg->job_id;
+    c->job_id = msg.job_id;
 
     return 0;
 }
 
 bool
-Daemon::handle_transfer_env(Client * client, EnvTransferMsg * emsg)
+Daemon::handle_transfer_env(Client * client, const EnvTransferMsg & emsg)
 {
     log_info() << "handle_transfer_env, client status "
                << Client::status_str(client->status) << std::endl;
@@ -1192,36 +1193,35 @@ Daemon::handle_transfer_env(Client * client, EnvTransferMsg * emsg)
     assert(client->pipe_from_child < 0);
     assert(client->pipe_to_child < 0);
 
-    std::string target = emsg->target;
+    std::string target = emsg.target;
 
     if (target.empty()) {
         target = machine_name;
     }
 
-    int            pipe_from_child = -1;
-    int            pipe_to_child = -1;
-    FileChunkMsg * fmsg = nullptr;
+    int          pipe_from_child = -1;
+    int          pipe_to_child = -1;
+    FileChunkMsg fcmsg{};
 
     pid_t pid = start_install_environment(envbasedir,
                                           target,
-                                          emsg->name,
+                                          emsg.name,
                                           client->channel,
                                           pipe_to_child,
                                           pipe_from_child,
-                                          fmsg,
+                                          fcmsg,
                                           user_uid,
                                           user_gid,
                                           nice_level);
 
     if (pid <= 0) {
-        delete fmsg;
-        remove_environment_files(envbasedir, target + "/" + emsg->name);
+        remove_environment_files(envbasedir, target + "/" + emsg.name);
         handle_end(client, 144);
         return false;
     }
 
     client->status = Client::TOINSTALL;
-    client->outfile = target + "/" + emsg->name;
+    client->outfile = target + "/" + emsg.name;
     current_kids++;
 
     trace() << "PID of child thread running untaring environment: " << pid
@@ -1230,17 +1230,15 @@ Daemon::handle_transfer_env(Client * client, EnvTransferMsg * emsg)
     client->pipe_from_child = pipe_from_child;
     client->child_pid = pid;
 
-    if (!handle_file_chunk_env(client, fmsg)) {
-        delete fmsg;
+    if (!handle_file_chunk_env(client, std::move(fcmsg))) {
         return false;
     }
 
-    delete fmsg;
     return true;
 }
 
 bool
-Daemon::handle_file_chunk_env(Client * client, Msg * msg)
+Daemon::handle_file_chunk_env(Client * client, const Msg & msg)
 {
     /* this sucks, we can block when we're writing
        the file chunk to the child, but we can't let the child
@@ -1253,61 +1251,64 @@ Daemon::handle_file_chunk_env(Client * client, Msg * msg)
            client->status == Client::WAITINSTALL);
     assert(client->pipe_to_child >= 0);
 
-    if (msg->type == M_FILE_CHUNK) {
-        FileChunkMsg * fcmsg = static_cast<FileChunkMsg *>(msg);
-        ssize_t        len = fcmsg->len;
-        off_t          off = 0;
+    return ext::visit(
+        make_visitor(
+            [this, client](const FileChunkMsg & m) {
+                ssize_t len = m.buffer.size();
+                off_t   off = 0;
 
-        while (len) {
-            ssize_t bytes =
-                write(client->pipe_to_child, fcmsg->buffer + off, len);
+                while (len) {
+                    ssize_t bytes =
+                        write(client->pipe_to_child, &m.buffer[off], len);
 
-            if (bytes < 0 && errno == EINTR) {
-                continue;
-            }
-            if (bytes < 0 && errno == EPIPE) {
-                // Broken pipe may mean the unpacking has failed, but it also
-                // may mean the child has already finished successfully (it
-                // seems to happen, maybe some tar implementations add needless
-                // trailing bytes?). Wait for the child to finish to find out
-                // whether it was ok.
+                    if (bytes < 0 && errno == EINTR) {
+                        continue;
+                    }
+                    if (bytes < 0 && errno == EPIPE) {
+                        // Broken pipe may mean the unpacking has failed, but it
+                        // also may mean the child has already finished
+                        // successfully (it seems to happen, maybe some tar
+                        // implementations add needless trailing bytes?). Wait
+                        // for the child to finish to find out whether it was ok.
+                        return true;
+                    }
+
+                    if (bytes == -1) {
+                        log_perror("write to transfer env pipe failed.");
+                        handle_end(client, 137);
+                        return false;
+                    }
+
+                    len -= bytes;
+                    off += bytes;
+                }
+
                 return true;
-            }
-
-            if (bytes == -1) {
-                log_perror("write to transfer env pipe failed.");
-                handle_end(client, 137);
+            },
+            [this, client](const EndMsg & /*unused*/) {
+                trace() << "received end of environment, waiting for child"
+                        << std::endl;
+                close(client->pipe_to_child);
+                client->pipe_to_child = -1;
+                if (client->child_pid >= 0) {
+                    // Transfer done, wait for handle_transfer_env_child_done()
+                    // to finish the handling.
+                    client->status =
+                        Client::WAITINSTALL; // Ignore further messages
+                                             // until child finishes.
+                    return true;
+                }
+                // Transfer done, child done, finish.
+                return finish_transfer_env(client);
+            },
+            [this, client](const auto & m) {
+                // unexpected message type
+                log_error() << "protocol error while receiving environment ("
+                            << message_type(m) << ")" << std::endl;
+                handle_end(client, 138);
                 return false;
-            }
-
-            len -= bytes;
-            off += bytes;
-        }
-
-        return true;
-    }
-
-    if (msg->type == M_END) {
-        trace() << "received end of environment, waiting for child"
-                << std::endl;
-        close(client->pipe_to_child);
-        client->pipe_to_child = -1;
-        if (client->child_pid >= 0) {
-            // Transfer done, wait for handle_transfer_env_child_done() to
-            // finish the handling.
-            client->status = Client::WAITINSTALL; // Ignore further messages
-                                                  // until child finishes.
-            return true;
-        }
-        // Transfer done, child done, finish.
-        return finish_transfer_env(client);
-    }
-
-    // unexpected message type
-    log_error() << "protocol error while receiving environment (" << msg->type
-                << ")" << std::endl;
-    handle_end(client, 138);
-    return false;
+            }),
+        msg);
 }
 
 bool
@@ -1556,13 +1557,13 @@ Daemon::remove_environment(const std::string & env_key)
 }
 
 bool
-Daemon::handle_get_native_env(Client * client, GetNativeEnvMsg * msg)
+Daemon::handle_get_native_env(Client * client, const GetNativeEnvMsg & msg)
 {
     std::string                   env_key;
     std::map<std::string, time_t> filetimes;
     struct stat                   st;
 
-    std::string compiler = msg->compiler;
+    std::string compiler = msg.compiler;
     // Older clients passed simply "gcc" or "clang" and not a binary.
     if (!IS_PROTOCOL_41(client->channel) &&
         compiler.find('/') == std::string::npos)
@@ -1571,8 +1572,8 @@ Daemon::handle_get_native_env(Client * client, GetNativeEnvMsg * msg)
     std::string ccompiler = get_c_compiler(compiler);
     std::string cppcompiler = get_cpp_compiler(compiler);
 
-    trace() << "get_native_env for " << msg->compiler << " (" << ccompiler
-            << "," << cppcompiler << ")" << std::endl;
+    trace() << "get_native_env for " << msg.compiler << " (" << ccompiler << ","
+            << cppcompiler << ")" << std::endl;
 
     if (stat(ccompiler.c_str(), &st) != 0) {
         log_error() << "Compiler binary " << ccompiler
@@ -1587,8 +1588,8 @@ Daemon::handle_get_native_env(Client * client, GetNativeEnvMsg * msg)
         filetimes[cppcompiler] = st.st_mtime;
     }
 
-    env_key = msg->compression + ":" + ccompiler;
-    for (auto it = msg->extrafiles.begin(); it != msg->extrafiles.end(); ++it) {
+    env_key = msg.compression + ":" + ccompiler;
+    for (auto it = msg.extrafiles.begin(); it != msg.extrafiles.end(); ++it) {
         env_key += ':';
         env_key += *it;
 
@@ -1631,8 +1632,8 @@ Daemon::handle_get_native_env(Client * client, GetNativeEnvMsg * msg)
                                                    user_uid,
                                                    user_gid,
                                                    ccompiler,
-                                                   msg->extrafiles,
-                                                   msg->compression);
+                                                   msg.extrafiles,
+                                                   msg.compression);
         } else {
             trace() << "waiting for already running create_env " << env_key
                     << std::endl;
@@ -1706,27 +1707,28 @@ Daemon::create_env_finished(std::string env_key)
 }
 
 bool
-Daemon::handle_job_done(Client * cl, JobDoneMsg * m)
+Daemon::handle_job_done(Client * cl, const JobDoneMsg & msg)
 {
     if (cl->status == Client::CLIENTWORK) {
         clients.active_processes--;
     }
 
     cl->status = Client::JOBDONE;
-    JobDoneMsg * msg = static_cast<JobDoneMsg *>(m);
-    trace() << "handle_job_done " << msg->job_id << " " << msg->exitcode
+    trace() << "handle_job_done " << msg.job_id << " " << msg.exitcode
             << std::endl;
 
-    if (!m->is_from_server() && (m->user_msec + m->sys_msec) <= m->real_msec) {
-        icecream_load += (m->user_msec + m->sys_msec) / num_cpus;
+    if (!msg.is_from_server() &&
+        (msg.user_msec + msg.sys_msec) <= msg.real_msec) {
+        icecream_load += (msg.user_msec + msg.sys_msec) / num_cpus;
     }
 
-    assert(msg->job_id == cl->job_id);
+    assert(msg.job_id == cl->job_id);
     cl->job_id = 0; // the scheduler doesn't have it anymore
 
-    msg->client_count = clients.size();
+    JobDoneMsg sched_msg{msg};
+    sched_msg.client_count = clients.size();
 
-    return send_scheduler(*msg);
+    return send_scheduler(sched_msg);
 }
 
 void
@@ -1877,20 +1879,21 @@ Daemon::handle_compile_done(Client * client)
 }
 
 bool
-Daemon::handle_compile_file(Client * client, Msg * msg)
+Daemon::handle_compile_file(Client * client, CompileFileMsg & msg)
 {
-    CompileJob * job = dynamic_cast<CompileFileMsg *>(msg)->takeJob();
+    CompileJob::UPtr job = msg.takeJob();
     assert(client);
     assert(job);
-    client->job = job;
+    client->job = job.release();
 
     if (client->status == Client::CLIENTWORK) {
-        assert(job->environmentVersion() == "__client");
+        assert(client->job->environmentVersion() == "__client");
 
-        if (!send_scheduler(JobBeginMsg(job->jobID(), clients.size()))) {
+        if (!send_scheduler(
+                JobBeginMsg(client->job->jobID(), clients.size()))) {
             trace()
                 << "can't reach scheduler to tell him about compile file job "
-                << job->jobID() << std::endl;
+                << client->job->jobID() << std::endl;
             return false;
         }
 
@@ -1903,18 +1906,17 @@ Daemon::handle_compile_file(Client * client, Msg * msg)
 }
 
 bool
-Daemon::handle_verify_env(Client * client, VerifyEnvMsg * msg)
+Daemon::handle_verify_env(Client * client, const VerifyEnvMsg & msg)
 {
-    assert(msg);
     bool ok = verify_env(client->channel,
                          envbasedir,
-                         msg->target,
-                         msg->environment,
+                         msg.target,
+                         msg.environment,
                          user_uid,
                          user_gid);
     trace() << "Verify environment done, " << (ok ? "success" : "failure")
-            << ", environment " << msg->environment << " (" << msg->target
-            << ")" << std::endl;
+            << ", environment " << msg.environment << " (" << msg.target << ")"
+            << std::endl;
     VerifyEnvResultMsg resultmsg(ok);
 
     if (!client->channel->send_msg(resultmsg)) {
@@ -1926,10 +1928,10 @@ Daemon::handle_verify_env(Client * client, VerifyEnvMsg * msg)
 }
 
 bool
-Daemon::handle_blacklist_host_env(Client * client, Msg * msg)
+Daemon::handle_blacklist_host_env(Client *                    client,
+                                  const BlacklistHostEnvMsg & msg)
 {
     // just forward
-    assert(dynamic_cast<BlacklistHostEnvMsg *>(msg));
     assert(client);
     (void)client;
 
@@ -1937,7 +1939,7 @@ Daemon::handle_blacklist_host_env(Client * client, Msg * msg)
         return false;
     }
 
-    return send_scheduler(*msg);
+    return send_scheduler(msg);
 }
 
 void
@@ -2068,43 +2070,42 @@ Daemon::clear_children()
 }
 
 bool
-Daemon::handle_get_cs(Client * client, Msg * msg)
+Daemon::handle_get_cs(Client * client, GetCSMsg & msg)
 {
-    GetCSMsg * umsg = dynamic_cast<GetCSMsg *>(msg);
     assert(client);
     client->status = Client::WAITFORCS;
-    umsg->client_id = client->client_id;
-    trace() << "handle_get_cs " << umsg->client_id << std::endl;
+    msg.client_id = client->client_id;
+    trace() << "handle_get_cs " << msg.client_id << std::endl;
 
     if (!scheduler) {
         /* now the thing is this: if there is no scheduler
            there is no point in trying to ask him. So we just
            redefine this as local job */
         client->usecsmsg = new UseCSMsg(
-            umsg->target, "127.0.0.1", daemon_port, umsg->client_id, true, 1, 0);
+            msg.target, "127.0.0.1", daemon_port, msg.client_id, true, 1, 0);
         client->status = Client::PENDING_USE_CS;
-        client->job_id = umsg->client_id;
+        client->job_id = msg.client_id;
         return true;
     }
 
-    umsg->client_count = clients.size();
+    msg.client_count = clients.size();
 
-    return send_scheduler(*umsg);
+    return send_scheduler(msg);
 }
 
 int
-Daemon::handle_cs_conf(ConfCSMsg * msg)
+Daemon::handle_cs_conf(const ConfCSMsg & msg)
 {
-    max_scheduler_pong = msg->max_scheduler_pong;
-    max_scheduler_ping = msg->max_scheduler_ping;
+    max_scheduler_pong = msg.max_scheduler_pong;
+    max_scheduler_ping = msg.max_scheduler_ping;
     return 0;
 }
 
 bool
-Daemon::handle_local_job(Client * client, Msg * msg)
+Daemon::handle_job_local_begin(Client * client, const JobLocalBeginMsg & msg)
 {
     client->status = Client::LINKJOB;
-    client->outfile = dynamic_cast<JobLocalBeginMsg *>(msg)->outfile;
+    client->outfile = msg.outfile;
     return true;
 }
 
@@ -2114,56 +2115,55 @@ Daemon::handle_activity(Client * client)
     assert(client->status != Client::TOCOMPILE &&
            client->status != Client::WAITINSTALL);
 
-    Msg * msg = client->channel->get_msg(0, true);
+    auto msg = client->channel->get_msg(0, true);
 
-    if (!msg) {
+    if (ext::holds_alternative<ext::monostate>(msg)) {
         handle_end(client, 118);
         return false;
     }
 
-    bool ret = false;
-
     if (client->status == Client::TOINSTALL) {
-        ret = handle_file_chunk_env(client, msg);
-        delete msg;
-        return ret;
+        return handle_file_chunk_env(client, msg);
     }
 
-    switch (msg->type) {
-        case M_GET_NATIVE_ENV:
-            ret = handle_get_native_env(client,
-                                        dynamic_cast<GetNativeEnvMsg *>(msg));
-            break;
-        case M_COMPILE_FILE: ret = handle_compile_file(client, msg); break;
-        case M_TRANFER_ENV:
-            ret = handle_transfer_env(client,
-                                      dynamic_cast<EnvTransferMsg *>(msg));
-            break;
-        case M_GET_CS: ret = handle_get_cs(client, msg); break;
-        case M_END:
-            handle_end(client, 119);
-            ret = false;
-            break;
-        case M_JOB_LOCAL_BEGIN: ret = handle_local_job(client, msg); break;
-        case M_JOB_DONE:
-            ret = handle_job_done(client, dynamic_cast<JobDoneMsg *>(msg));
-            break;
-        case M_VERIFY_ENV:
-            ret = handle_verify_env(client, dynamic_cast<VerifyEnvMsg *>(msg));
-            break;
-        case M_BLACKLIST_HOST_ENV:
-            ret = handle_blacklist_host_env(client, msg);
-            break;
-        default:
-            log_error() << "protocol error " << msg->type << " on client "
-                        << client->dump() << std::endl;
-            client->channel->send_msg(EndMsg());
-            handle_end(client, 120);
-            ret = false;
-    }
+    // @TODO: Handle with overloading
+    return ext::visit(
+        make_visitor(
+            [this, client](GetNativeEnvMsg & m) {
+                return handle_get_native_env(client, m);
+            },
+            [this, client](CompileFileMsg & m) {
+                return handle_compile_file(client, m);
+            },
+            [this, client](EnvTransferMsg & m) {
+                return handle_transfer_env(client, m);
+            },
+            [this, client](GetCSMsg & m) { return handle_get_cs(client, m); },
+            [this, client](EndMsg & /*unused*/) {
+                handle_end(client, 119);
+                return false;
+            },
+            [this, client](JobLocalBeginMsg & m) {
+                return handle_job_local_begin(client, m);
+            },
+            [this, client](VerifyEnvMsg & m) {
+                return handle_verify_env(client, m);
+            },
+            [this, client](JobDoneMsg & m) {
+                return handle_job_done(client, m);
+            },
+            [this, client](BlacklistHostEnvMsg & m) {
+                return handle_blacklist_host_env(client, m);
+            },
+            [this, client](auto & m) {
+                log_error() << "protocol error " << message_type(m)
+                            << " on client " << client->dump() << std::endl;
+                client->channel->send_msg(EndMsg{});
+                handle_end(client, 120);
 
-    delete msg;
-    return ret;
+                return false;
+            }),
+        msg);
 }
 
 void
@@ -2287,44 +2287,40 @@ Daemon::answer_client_requests()
 
         if (scheduler && pollfd_is_set(pollfds, scheduler->fd, POLLIN)) {
             while (!scheduler->read_a_bit() || scheduler->has_msg()) {
-                Msg * msg = scheduler->get_msg(0, true);
+                auto msg = scheduler->get_msg(0, true);
 
-                if (!msg) {
+                if (ext::holds_alternative<ext::monostate>(msg)) {
                     log_warning() << "scheduler closed connection" << std::endl;
                     close_scheduler();
                     clear_children();
                     return;
                 }
 
-                ret = 0;
-
-                switch (msg->type) {
-                    case M_PING:
-
-                        if (!IS_PROTOCOL_27(scheduler)) {
-                            ret = !send_scheduler(PingMsg());
-                        }
-
-                        break;
-                    case M_USE_CS:
-                        ret = scheduler_use_cs(static_cast<UseCSMsg *>(msg));
-                        break;
-                    case M_NO_CS:
-                        ret = scheduler_no_cs(static_cast<NoCSMsg *>(msg));
-                        break;
-                    case M_GET_INTERNALS:
-                        ret = scheduler_get_internals();
-                        break;
-                    case M_CS_CONF:
-                        ret = handle_cs_conf(static_cast<ConfCSMsg *>(msg));
-                        break;
-                    default:
-                        log_error() << "unknown scheduler type "
-                                    << (char)msg->type << std::endl;
-                        ret = 1;
-                }
-
-                delete msg;
+                ext::visit(
+                    make_visitor(
+                        [this, &ret](const PingMsg & /*unused*/) {
+                            if (!IS_PROTOCOL_27(scheduler)) {
+                                ret = !send_scheduler(PingMsg{});
+                            }
+                        },
+                        [this, &ret](const GetInternalStatusMsg & /*unused*/) {
+                            ret = scheduler_get_internals();
+                        },
+                        [this, &ret](const UseCSMsg & m) {
+                            ret = scheduler_use_cs(m);
+                        },
+                        [this, &ret](const NoCSMsg & m) {
+                            ret = scheduler_no_cs(m);
+                        },
+                        [this, &ret](const ConfCSMsg & m) {
+                            ret = handle_cs_conf(m);
+                        },
+                        [this, &ret](const auto & m) {
+                            log_error() << "unknown scheduler type "
+                                        << message_type(m) << std::endl;
+                            ret = 1;
+                        }),
+                    msg);
 
                 if (ret) {
                     close_scheduler();

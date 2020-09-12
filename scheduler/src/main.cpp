@@ -145,19 +145,19 @@ JobRequestsGroup::remove_job(Job * job)
 }
 
 void
-add_job_stats(Job * job, JobDoneMsg * msg)
+add_job_stats(Job * job, const JobDoneMsg & msg)
 {
     JobStat st;
 
     /* We don't want to base our timings on failed or too small jobs.  */
-    if (msg->out_uncompressed < 4096 || msg->exitcode != 0) {
+    if (msg.out_uncompressed < 4096 || msg.exitcode != 0) {
         return;
     }
 
-    st.setOutputSize(msg->out_uncompressed);
-    st.setCompileTimeReal(msg->real_msec);
-    st.setCompileTimeUser(msg->user_msec);
-    st.setCompileTimeSys(msg->sys_msec);
+    st.setOutputSize(msg.out_uncompressed);
+    st.setCompileTimeReal(msg.real_msec);
+    st.setCompileTimeUser(msg.user_msec);
+    st.setCompileTimeSys(msg.sys_msec);
     st.setJobId(job->id());
 
     if (job->argFlags() & CompileJob::Flag_g) {
@@ -240,22 +240,20 @@ add_job_stats(Job * job, JobDoneMsg * msg)
 }
 
 bool
-handle_end(CompileServer * cs, Msg *);
+handle_end(CompileServer * cs);
 
 void
-notify_monitors(Msg * m)
+notify_monitors(const Msg & m)
 {
     for (auto it = monitors.begin(); it != monitors.end(); ++it) {
         /* If we can't send it, don't be clever, simply close this monitor.  */
         if (!(*it)->send_msg(
-                *m,
+                m,
                 MsgChannel::SendNonBlocking /*| MsgChannel::SendBulkOnly*/)) {
             trace() << "monitor is blocking... removing" << std::endl;
-            handle_end(*it, nullptr);
+            handle_end(*it);
         }
     }
-
-    delete m;
 }
 
 float
@@ -345,50 +343,47 @@ server_speed(CompileServer * cs, Job * job, bool blockDebug)
 }
 
 void
-handle_monitor_stats(CompileServer * cs, StatsMsg * m = nullptr)
+handle_monitor_stats(CompileServer * cs, const StatsMsg * msg = nullptr)
 {
     if (monitors.empty()) {
         return;
     }
 
-    std::string msg;
-    char        buffer[1000];
-    sprintf(buffer, "Name:%s\n", cs->nodeName().c_str());
-    msg += buffer;
-    sprintf(buffer, "IP:%s\n", cs->name.c_str());
-    msg += buffer;
-    sprintf(buffer, "MaxJobs:%d\n", cs->maxJobs());
-    msg += buffer;
-    sprintf(buffer, "NoRemote:%s\n", cs->noRemote() ? "true" : "false");
-    msg += buffer;
-    sprintf(buffer, "Platform:%s\n", cs->hostPlatform().c_str());
-    msg += buffer;
-    sprintf(buffer, "Version:%d\n", cs->maximum_remote_protocol);
-    msg += buffer;
-    sprintf(buffer,
-            "Features:%s\n",
-            supported_features_to_string(cs->supportedFeatures()).c_str());
-    msg += buffer;
-    sprintf(buffer, "Speed:%f\n", server_speed(cs));
-    msg += buffer;
+    std::ostringstream ss{};
+    ss << "Name:" << cs->nodeName().c_str()
+       << "\n"
+          "IP:"
+       << cs->name.c_str()
+       << "\n"
+          "MaxJobs:"
+       << cs->maxJobs()
+       << "\n"
+          "NoRemote:"
+       << (cs->noRemote() ? "true" : "false")
+       << "\n"
+          "Platform:"
+       << cs->hostPlatform().c_str()
+       << "\n"
+          "Version:"
+       << cs->maximum_remote_protocol
+       << "\n"
+          "Features:"
+       << supported_features_to_string(cs->supportedFeatures()).c_str()
+       << "\n"
+          "Speed:"
+       << server_speed(cs) << '\n';
 
-    if (m) {
-        sprintf(buffer, "Load:%d\n", m->load);
-        msg += buffer;
-        sprintf(buffer, "LoadAvg1:%u\n", m->loadAvg1);
-        msg += buffer;
-        sprintf(buffer, "LoadAvg5:%u\n", m->loadAvg5);
-        msg += buffer;
-        sprintf(buffer, "LoadAvg10:%u\n", m->loadAvg10);
-        msg += buffer;
-        sprintf(buffer, "FreeMem:%u\n", m->freeMem);
-        msg += buffer;
+    if (msg) {
+        ss << "Load:" << msg->load << '\n'
+           << "LoadAvg1:" << msg->loadAvg1 << '\n'
+           << "LoadAvg5:" << msg->loadAvg5 << '\n'
+           << "LoadAvg10:" << msg->loadAvg10 << '\n'
+           << "FreeMem:" << msg->freeMem << '\n';
     } else {
-        sprintf(buffer, "Load:%u\n", cs->load());
-        msg += buffer;
+        ss << "Load:" << cs->load() << '\n';
     }
 
-    notify_monitors(new MonStatsMsg(cs->hostId(), msg));
+    notify_monitors(MonStatsMsg(cs->hostId(), ss.str()));
 }
 
 Job *
@@ -517,26 +512,20 @@ remove_job_request(const JobRequestPosition & pos)
 }
 
 bool
-handle_cs_request(MsgChannel * cs, Msg * _m)
+handle_cs_request(MsgChannel * cs, const GetCSMsg & msg)
 {
-    GetCSMsg * m = dynamic_cast<GetCSMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
     CompileServer * submitter = static_cast<CompileServer *>(cs);
 
-    submitter->setClientCount(m->client_count);
+    submitter->setClientCount(msg.client_count);
 
     Job * master_job = nullptr;
 
-    for (unsigned int i = 0; i < m->count; ++i) {
+    for (unsigned int i = 0; i < msg.count; ++i) {
         Job * job = create_new_job(submitter);
-        job->setEnvironments(m->versions);
-        job->setTargetPlatform(m->target);
-        job->setArgFlags(m->arg_flags);
-        switch (m->lang) {
+        job->setEnvironments(msg.versions);
+        job->setTargetPlatform(msg.target);
+        job->setArgFlags(msg.arg_flags);
+        switch (msg.lang) {
             case CompileJob::Lang_C: job->setLanguage("C"); break;
             case CompileJob::Lang_CXX: job->setLanguage("C++"); break;
             case CompileJob::Lang_OBJC: job->setLanguage("ObjC"); break;
@@ -546,12 +535,12 @@ handle_cs_request(MsgChannel * cs, Msg * _m)
                 job->setLanguage("???"); // presumably newer client?
                 break;
         }
-        job->setFileName(m->filename);
-        job->setLocalClientId(m->client_id);
-        job->setPreferredHost(m->preferred_host);
-        job->setMinimalHostVersion(m->minimal_host_version);
-        job->setRequiredFeatures(m->required_features);
-        job->setNiceness(std::max(0, std::min(20, int(m->niceness))));
+        job->setFileName(msg.filename);
+        job->setLocalClientId(msg.client_id);
+        job->setPreferredHost(msg.preferred_host);
+        job->setMinimalHostVersion(msg.minimal_host_version);
+        job->setRequiredFeatures(msg.required_features);
+        job->setNiceness(std::max(0, std::min(20, int(msg.niceness))));
         enqueue_job_request(job);
         std::ostream & dbg = log_info();
         dbg << "NEW " << job->id() << " client=" << submitter->nodeName()
@@ -567,9 +556,9 @@ handle_cs_request(MsgChannel * cs, Msg * _m)
             }
         }
 
-        dbg << "] " << m->filename << " " << job->language() << " "
+        dbg << "] " << msg.filename << " " << job->language() << " "
             << job->niceness() << std::endl;
-        notify_monitors(new MonGetCSMsg(job->id(), submitter->hostId(), m));
+        notify_monitors(MonGetCSMsg(job->id(), submitter->hostId(), msg));
 
         if (!master_job) {
             master_job = job;
@@ -581,36 +570,22 @@ handle_cs_request(MsgChannel * cs, Msg * _m)
     return true;
 }
 
-bool
-handle_local_job(CompileServer * cs, Msg * _m)
+void
+handle_job_local_begin(CompileServer * cs, const JobLocalBeginMsg & msg)
 {
-    JobLocalBeginMsg * m = dynamic_cast<JobLocalBeginMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
     ++new_job_id;
-    trace() << "handle_local_job " << m->outfile << " " << m->id << std::endl;
-    cs->insertClientJobId(m->id, new_job_id);
-    notify_monitors(new MonLocalJobBeginMsg(
-        new_job_id, m->outfile, m->stime, cs->hostId()));
-    return true;
+    trace() << "handle_local_job " << msg.outfile << " " << msg.id << std::endl;
+    cs->insertClientJobId(msg.id, new_job_id);
+    notify_monitors(
+        MonLocalJobBeginMsg(new_job_id, msg.outfile, msg.stime, cs->hostId()));
 }
 
-bool
-handle_local_job_done(CompileServer * cs, Msg * _m)
+void
+handle_job_local_done(CompileServer * cs, const JobLocalDoneMsg & msg)
 {
-    JobLocalDoneMsg * m = dynamic_cast<JobLocalDoneMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
-    trace() << "handle_local_job_done " << m->job_id << std::endl;
-    notify_monitors(new JobLocalDoneMsg(cs->getClientJobId(m->job_id)));
-    cs->eraseClientJobId(m->job_id);
-    return true;
+    trace() << "handle_local_job_done " << msg.job_id << std::endl;
+    notify_monitors(new JobLocalDoneMsg(cs->getClientJobId(msg.job_id)));
+    cs->eraseClientJobId(msg.job_id);
 }
 
 /* Given a candidate CS and a JOB, check all installed environments
@@ -882,7 +857,7 @@ prune_servers()
         if ((now - (*it)->last_talk) >= MAX_SCHEDULER_PING) {
             CompileServer * old = *it;
             ++it;
-            handle_end(old, nullptr);
+            handle_end(old);
             continue;
         }
 
@@ -904,7 +879,7 @@ prune_servers()
                     << (*it)->nodeName() << std::endl;
             CompileServer * old = *it;
             ++it;
-            handle_end(old, nullptr);
+            handle_end(old);
             continue;
         }
 
@@ -935,7 +910,7 @@ prune_servers()
             trace() << "removing " << (*it)->nodeName() << std::endl;
             CompileServer * old = *it;
             ++it;
-            handle_end(old, nullptr);
+            handle_end(old);
             continue;
         } else {
             min_time =
@@ -948,7 +923,7 @@ prune_servers()
             trace() << "FORCED removing " << (*it)->nodeName() << std::endl;
             CompileServer * old = *it;
             ++it;
-            handle_end(old, 0);
+            handle_end(old);
             continue;
         }
 #endif
@@ -1056,7 +1031,7 @@ empty_queue()
         NoCSMsg m2(job->id(), job->localClientId());
         if (!job->submitter()->send_msg(m2)) {
             trace() << "failed to deliver job " << job->id() << std::endl;
-            handle_end(job->submitter(), nullptr); // will care for the rest
+            handle_end(job->submitter()); // will care for the rest
             return true;
         }
     } else {
@@ -1069,7 +1044,7 @@ empty_queue()
                     matched_job_id);
         if (!job->submitter()->send_msg(m2)) {
             trace() << "failed to deliver job " << job->id() << std::endl;
-            handle_end(job->submitter(), nullptr); // will care for the rest
+            handle_end(job->submitter()); // will care for the rest
             return true;
         }
     }
@@ -1115,30 +1090,24 @@ empty_queue()
 }
 
 bool
-handle_login(CompileServer * cs, Msg * _m)
+handle_login(CompileServer * cs, const LoginMsg & msg)
 {
-    LoginMsg * m = dynamic_cast<LoginMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
     std::ostream & dbg = trace();
 
-    cs->setRemotePort(m->port);
-    cs->setCompilerVersions(m->envs);
-    cs->setMaxJobs(m->max_kids);
-    cs->setNoRemote(m->noremote);
+    cs->setRemotePort(msg.port);
+    cs->setCompilerVersions(msg.envs);
+    cs->setMaxJobs(msg.max_kids);
+    cs->setNoRemote(msg.noremote);
 
-    if (m->nodename.length()) {
-        cs->setNodeName(m->nodename);
+    if (msg.nodename.length()) {
+        cs->setNodeName(msg.nodename);
     } else {
         cs->setNodeName(cs->name);
     }
 
-    cs->setHostPlatform(m->host_platform);
-    cs->setChrootPossible(m->chroot_possible);
-    cs->setSupportedFeatures(m->supported_features);
+    cs->setHostPlatform(msg.host_platform);
+    cs->setChrootPossible(msg.chroot_possible);
+    cs->setSupportedFeatures(msg.supported_features);
     cs->pick_new_id();
 
     for (auto it = block_css.begin(); it != block_css.end(); ++it)
@@ -1146,10 +1115,10 @@ handle_login(CompileServer * cs, Msg * _m)
             return false;
         }
 
-    dbg << "login " << m->nodename << " protocol version: " << cs->protocol
-        << " features: " << supported_features_to_string(m->supported_features)
+    dbg << "login " << msg.nodename << " protocol version: " << cs->protocol
+        << " features: " << supported_features_to_string(msg.supported_features)
         << " [";
-    for (auto it = m->envs.begin(); it != m->envs.end(); ++it) {
+    for (auto it = msg.envs.begin(); it != msg.envs.end(); ++it) {
         dbg << it->second << "(" << it->first << "), ";
     }
     dbg << "]" << std::endl;
@@ -1160,7 +1129,7 @@ handle_login(CompileServer * cs, Msg * _m)
     for (auto it = css.begin(); it != css.end(); ++it) {
         if (cs->eq_ip(*(*it)) && cs->nodeName() == (*it)->nodeName()) {
             CompileServer * old = *it;
-            handle_end(old, nullptr);
+            handle_end(old);
         }
     }
 
@@ -1174,23 +1143,16 @@ handle_login(CompileServer * cs, Msg * _m)
     return true;
 }
 
-bool
-handle_relogin(MsgChannel * mc, Msg * _m)
+void
+handle_relogin(CompileServer * cs, const LoginMsg & msg)
 {
-    LoginMsg * m = dynamic_cast<LoginMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
-    CompileServer * cs = static_cast<CompileServer *>(mc);
-    cs->setCompilerVersions(m->envs);
+    cs->setCompilerVersions(msg.envs);
     cs->setBusyInstalling(0);
 
     std::ostream & dbg = trace();
     dbg << "RELOGIN " << cs->nodeName() << "(" << cs->hostPlatform() << "): [";
 
-    for (auto it = m->envs.begin(); it != m->envs.end(); ++it) {
+    for (auto it = msg.envs.begin(); it != msg.envs.end(); ++it) {
         dbg << it->second << "(" << it->first << "), ";
     }
 
@@ -1200,19 +1162,11 @@ handle_relogin(MsgChannel * mc, Msg * _m)
     if (IS_PROTOCOL_24(cs)) {
         cs->send_msg(ConfCSMsg());
     }
-
-    return false;
 }
 
-bool
-handle_mon_login(CompileServer * cs, Msg * _m)
+void
+handle_mon_login(CompileServer * cs, const MonLoginMsg & /*unused*/)
 {
-    MonLoginMsg * m = dynamic_cast<MonLoginMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
     monitors.push_back(cs);
     // monitors really want to be fed lazily
     cs->setBulkTransfer();
@@ -1222,39 +1176,33 @@ handle_mon_login(CompileServer * cs, Msg * _m)
     }
 
     fd2cs.erase(cs->fd); // no expected data from them
-    return true;
 }
 
 bool
-handle_job_begin(CompileServer * cs, Msg * _m)
+handle_job_begin(CompileServer * cs, const JobBeginMsg & msg)
 {
-    JobBeginMsg * m = dynamic_cast<JobBeginMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
-    if (jobs.find(m->job_id) == jobs.end()) {
-        trace() << "handle_job_begin: no valid job id " << m->job_id
+    auto job_it = jobs.find(msg.job_id);
+    if (job_it == jobs.end()) {
+        trace() << "handle_job_begin: no valid job id " << msg.job_id
                 << std::endl;
         return false;
     }
 
-    Job * job = jobs[m->job_id];
+    Job * job = job_it->second;
 
     if (job->server() != cs) {
         trace() << "that job isn't handled by " << cs->name << std::endl;
         return false;
     }
 
-    cs->setClientCount(m->client_count);
+    cs->setClientCount(msg.client_count);
 
     job->setState(Job::COMPILING);
-    job->setStartTime(m->stime);
+    job->setStartTime(msg.stime);
     job->setStartOnScheduler(time(nullptr));
-    notify_monitors(new MonJobBeginMsg(m->job_id, m->stime, cs->hostId()));
+    notify_monitors(MonJobBeginMsg(msg.job_id, msg.stime, cs->hostId()));
 #if DEBUG_LEVEL >= 0
-    trace() << "BEGIN: " << m->job_id
+    trace() << "BEGIN: " << msg.job_id
             << " client=" << job->submitter()->nodeName() << "("
             << job->targetPlatform() << ")"
             << " server=" << job->server()->nodeName() << "("
@@ -1265,22 +1213,17 @@ handle_job_begin(CompileServer * cs, Msg * _m)
 }
 
 bool
-handle_job_done(CompileServer * cs, Msg * _m)
+handle_job_done(CompileServer * cs, JobDoneMsg & msg)
 {
-    JobDoneMsg * m = dynamic_cast<JobDoneMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
     Job * j = nullptr;
 
-    if (uint32_t clientId = m->unknown_job_client_id()) {
+    if (uint32_t clientId = msg.unknown_job_client_id()) {
         // The daemon has sent a done message for a job for which it doesn't
         // know the job id (happens if the job is cancelled before we send back
         // the job id). Find the job using the client id.
-        for (auto mit = jobs.begin(); mit != jobs.end(); ++mit) {
-            Job * job = mit->second;
+        for (auto & id_and_job : jobs) {
+            auto   id = id_and_job.first;
+            auto * job = id_and_job.second;
             trace() << "looking for waitcs " << job->server() << " "
                     << job->submitter() << " " << cs << " " << job->state()
                     << " " << job->localClientId() << " " << clientId
@@ -1288,9 +1231,9 @@ handle_job_done(CompileServer * cs, Msg * _m)
 
             if (job->server() == nullptr && job->submitter() == cs &&
                 job->localClientId() == clientId) {
-                trace() << "STOP (WAITFORCS) FOR " << mit->first << std::endl;
+                trace() << "STOP (WAITFORCS) FOR " << id << std::endl;
                 j = job;
-                m->set_job_id(j->id()); // Now we know the job's id.
+                msg.set_job_id(j->id()); // Now we know the job's id.
 
                 /* Unfortunately the job_requests queues are also tagged based
                 on the daemon, so we need to clean them up also.  */
@@ -1313,60 +1256,63 @@ handle_job_done(CompileServer * cs, Msg * _m)
                     }
             }
         }
-    } else if (jobs.find(m->job_id) != jobs.end()) {
-        j = jobs[m->job_id];
+    } else {
+        auto job_it = jobs.find(msg.job_id);
+        if (job_it != jobs.end()) {
+            j = job_it->second;
+        }
     }
 
-    if (!j) {
-        trace() << "job ID not present " << m->job_id << std::endl;
+    if (j == nullptr) {
+        trace() << "job ID not present " << msg.job_id << std::endl;
         return false;
     }
 
-    if (m->is_from_server() && (j->server() != cs)) {
-        log_info() << "the server isn't the same for job " << m->job_id
+    if (msg.is_from_server() && (j->server() != cs)) {
+        log_info() << "the server isn't the same for job " << msg.job_id
                    << std::endl;
         log_info() << "server: " << j->server()->nodeName() << std::endl;
         log_info() << "msg came from: " << cs->nodeName() << std::endl;
         // the daemon is not following matz's rules: kick him
-        handle_end(cs, nullptr);
+        handle_end(cs);
         return false;
     }
 
-    if (!m->is_from_server() && (j->submitter() != cs)) {
-        log_info() << "the submitter isn't the same for job " << m->job_id
+    if (!msg.is_from_server() && (j->submitter() != cs)) {
+        log_info() << "the submitter isn't the same for job " << msg.job_id
                    << std::endl;
         log_info() << "submitter: " << j->submitter()->nodeName() << std::endl;
         log_info() << "msg came from: " << cs->nodeName() << std::endl;
         // the daemon is not following matz's rules: kick him
-        handle_end(cs, nullptr);
+        handle_end(cs);
         return false;
     }
 
-    cs->setClientCount(m->client_count);
+    cs->setClientCount(msg.client_count);
 
-    if (m->exitcode == 0) {
+    if (msg.exitcode == 0) {
         std::ostream & dbg = trace();
-        dbg << "END " << m->job_id << " status=" << m->exitcode;
+        dbg << "END " << msg.job_id << " status=" << msg.exitcode;
 
-        if (m->in_uncompressed)
-            dbg << " in=" << m->in_uncompressed << "("
-                << int(m->in_compressed * 100 / m->in_uncompressed) << "%)";
+        if (msg.in_uncompressed)
+            dbg << " in=" << msg.in_uncompressed << "("
+                << int(msg.in_compressed * 100 / msg.in_uncompressed) << "%)";
         else {
             dbg << " in=0(0%)";
         }
 
-        if (m->out_uncompressed)
-            dbg << " out=" << m->out_uncompressed << "("
-                << int(m->out_compressed * 100 / m->out_uncompressed) << "%)";
+        if (msg.out_uncompressed)
+            dbg << " out=" << msg.out_uncompressed << "("
+                << int(msg.out_compressed * 100 / msg.out_uncompressed) << "%)";
         else {
             dbg << " out=0(0%)";
         }
 
-        dbg << " real=" << m->real_msec << " user=" << m->user_msec
-            << " sys=" << m->sys_msec << " pfaults=" << m->pfaults
+        dbg << " real=" << msg.real_msec << " user=" << msg.user_msec
+            << " sys=" << msg.sys_msec << " pfaults=" << msg.pfaults
             << " server=" << j->server()->nodeName() << std::endl;
     } else {
-        trace() << "END " << m->job_id << " status=" << m->exitcode
+        trace() << "END " << msg.job_id << " status=" << msg.exitcode
                 << std::endl;
     }
 
@@ -1374,35 +1320,27 @@ handle_job_done(CompileServer * cs, Msg * _m)
         j->server()->removeJob(j);
     }
 
-    add_job_stats(j, m);
-    notify_monitors(new MonJobDoneMsg(*m));
-    jobs.erase(m->job_id);
+    add_job_stats(j, msg);
+    notify_monitors(MonJobDoneMsg{msg});
+    jobs.erase(msg.job_id);
     delete j;
 
     return true;
 }
 
-bool
-handle_ping(CompileServer * cs, Msg * /*_m*/)
+void
+handle_ping(CompileServer * cs)
 {
     cs->last_talk = time(nullptr);
 
     if (cs->maxJobs() < 0) {
         cs->setMaxJobs(cs->maxJobs() * -1);
     }
-
-    return true;
 }
 
 bool
-handle_stats(CompileServer * cs, Msg * _m)
+handle_stats(CompileServer * cs, const StatsMsg & msg)
 {
-    StatsMsg * m = dynamic_cast<StatsMsg *>(_m);
-
-    if (!m) {
-        return false;
-    }
-
     /* Before protocol 25, ping and stat handling was
        clutched together.  */
     if (!IS_PROTOCOL_25(cs)) {
@@ -1413,78 +1351,69 @@ handle_stats(CompileServer * cs, Msg * _m)
         }
     }
 
-    for (CompileServer * const c : css)
-        if (c == cs) {
-            c->setLoad(m->load);
-            c->setClientCount(m->client_count);
-            handle_monitor_stats(c, m);
-            return true;
-        }
-
-    return false;
-}
-
-bool
-handle_blacklist_host_env(CompileServer * cs, Msg * _m)
-{
-    BlacklistHostEnvMsg * m = dynamic_cast<BlacklistHostEnvMsg *>(_m);
-
-    if (!m) {
+    const auto end = css.end();
+    auto       cs_it = std::find(css.begin(), end, cs);
+    if (cs_it == end) {
         return false;
     }
 
-    for (auto it = css.begin(); it != css.end(); ++it)
-        if ((*it)->name == m->hostname) {
-            trace() << "Blacklisting host " << m->hostname
-                    << " for environment " << m->environment << " ("
-                    << m->target << ")" << std::endl;
-            cs->blacklistCompileServer(*it,
-                                       make_pair(m->target, m->environment));
-        }
+    (*cs_it)->setLoad(msg.load);
+    (*cs_it)->setClientCount(msg.client_count);
+    handle_monitor_stats(*cs_it, &msg);
 
     return true;
 }
 
+void
+handle_blacklist_host_env(CompileServer * cs, const BlacklistHostEnvMsg & msg)
+{
+    const auto end = css.end();
+    auto cs_it = std::find_if(css.begin(), end, [&msg](CompileServer * cs) {
+        return cs->name.compare(msg.hostname) == 0;
+    });
+
+    if (cs_it != end) {
+        trace() << "Blacklisting host " << msg.hostname << " for environment "
+                << msg.environment << " (" << msg.target << ")" << std::endl;
+        cs->blacklistCompileServer(*cs_it,
+                                   make_pair(msg.target, msg.environment));
+    }
+}
+
 // return false if some error occurred, leaves C open.  */
 bool
-try_login(CompileServer * cs, Msg * m)
+try_login(CompileServer * cs, const Msg & msg)
 {
-    bool ret = true;
-
-    switch (m->type) {
-        case M_LOGIN:
-            cs->setType(CompileServer::DAEMON);
-            ret = handle_login(cs, m);
-            break;
-        case M_MON_LOGIN:
-            cs->setType(CompileServer::MONITOR);
-            ret = handle_mon_login(cs, m);
-            break;
-        default:
-            log_info() << "Invalid first message " << (char)m->type
-                       << std::endl;
-            ret = false;
-            break;
-    }
+    bool ret = ext::visit(make_visitor(
+                              [cs](const LoginMsg & m) {
+                                  cs->setType(CompileServer::DAEMON);
+                                  return handle_login(cs, m);
+                              },
+                              [cs](const MonLoginMsg & m) {
+                                  cs->setType(CompileServer::MONITOR);
+                                  handle_mon_login(cs, m);
+                                  return true;
+                              },
+                              [](const auto & m) {
+                                  log_info() << "Invalid first message "
+                                             << message_type(m) << std::endl;
+                                  return false;
+                              }),
+                          msg);
 
     if (ret) {
         cs->setState(CompileServer::LOGGEDIN);
     } else {
-        handle_end(cs, m);
+        handle_end(cs);
     }
 
-    delete m;
     return ret;
 }
 
 bool
-handle_end(CompileServer * toremove, Msg * m)
+handle_end(CompileServer * toremove)
 {
-#if DEBUG_LEVEL > 1
-    trace() << "Handle_end " << toremove << " " << m << std::endl;
-#else
-    (void)m;
-#endif
+    trace() << "Handle_end " << toremove << std::endl;
 
     switch (toremove->type()) {
         case CompileServer::MONITOR:
@@ -1498,8 +1427,7 @@ handle_end(CompileServer * toremove, Msg * m)
         case CompileServer::DAEMON:
             log_info() << "remove daemon " << toremove->nodeName() << std::endl;
 
-            notify_monitors(
-                new MonStatsMsg(toremove->hostId(), "State:Offline\n"));
+            notify_monitors(MonStatsMsg(toremove->hostId(), "State:Offline\n"));
 
             /* A daemon disconnected.  We must remove it from the css list,
                and we have to delete all jobs scheduled on that daemon.
@@ -1519,7 +1447,7 @@ handle_end(CompileServer * toremove, Msg * m)
                         trace() << "STOP (DAEMON) FOR " << (*jit)->id()
                                 << std::endl;
                         notify_monitors(
-                            new MonJobDoneMsg(JobDoneMsg((*jit)->id(), 255)));
+                            MonJobDoneMsg(JobDoneMsg((*jit)->id(), 255)));
 
                         if ((*jit)->server()) {
                             (*jit)->server()->setBusyInstalling(0);
@@ -1541,8 +1469,7 @@ handle_end(CompileServer * toremove, Msg * m)
 
                 if (job->server() == toremove || job->submitter() == toremove) {
                     trace() << "STOP (DAEMON2) FOR " << mit->first << std::endl;
-                    notify_monitors(
-                        new MonJobDoneMsg(JobDoneMsg(job->id(), 255)));
+                    notify_monitors(MonJobDoneMsg(JobDoneMsg(job->id(), 255)));
 
                     /* If this job is removed because the submitter is removed
                     also remove the job from the servers joblist.  */
@@ -1578,49 +1505,54 @@ handle_end(CompileServer * toremove, Msg * m)
 bool
 handle_activity(CompileServer * cs)
 {
-    Msg * m;
-    bool  ret = true;
-    m = cs->get_msg(0, true);
+    auto msg = cs->get_msg(0, true);
 
-    if (!m) {
-        handle_end(cs, m);
+    if (ext::holds_alternative<ext::monostate>(msg)) {
+        handle_end(cs);
         return false;
     }
 
     /* First we need to login.  */
     if (cs->state() == CompileServer::CONNECTED) {
-        return try_login(cs, m);
+        return try_login(cs, msg);
     }
 
-    switch (m->type) {
-        case M_JOB_BEGIN: ret = handle_job_begin(cs, m); break;
-        case M_JOB_DONE: ret = handle_job_done(cs, m); break;
-        case M_PING: ret = handle_ping(cs, m); break;
-        case M_STATS: ret = handle_stats(cs, m); break;
-        case M_END:
-            handle_end(cs, m);
-            ret = false;
-            break;
-        case M_JOB_LOCAL_BEGIN: ret = handle_local_job(cs, m); break;
-        case M_JOB_LOCAL_DONE: ret = handle_local_job_done(cs, m); break;
-        case M_LOGIN: ret = handle_relogin(cs, m); break;
-        case M_TEXT_DEPRECATED:
-            log_warning() << "Received deprecated TextMsg\n";
-            break;
-        case M_GET_CS: ret = handle_cs_request(cs, m); break;
-        case M_BLACKLIST_HOST_ENV:
-            ret = handle_blacklist_host_env(cs, m);
-            break;
-        default:
-            log_info() << "Invalid message type arrived " << (char)m->type
-                       << std::endl;
-            handle_end(cs, m);
-            ret = false;
-            break;
-    }
-
-    delete m;
-    return ret;
+    return ext::visit(
+        make_visitor([cs](JobBeginMsg & m) { return handle_job_begin(cs, m); },
+                     [cs](JobDoneMsg & m) { return handle_job_done(cs, m); },
+                     [cs](PingMsg & /*unused*/) {
+                         handle_ping(cs);
+                         return true;
+                     },
+                     [cs](StatsMsg & m) { return handle_stats(cs, m); },
+                     [cs](EndMsg & /*unused*/) {
+                         handle_end(cs);
+                         return false;
+                     },
+                     [cs](JobLocalBeginMsg & m) {
+                         handle_job_local_begin(cs, m);
+                         return true;
+                     },
+                     [cs](JobLocalDoneMsg & m) {
+                         handle_job_local_done(cs, m);
+                         return true;
+                     },
+                     [cs](LoginMsg & m) {
+                         handle_relogin(cs, m);
+                         return true;
+                     },
+                     [cs](GetCSMsg & m) { return handle_cs_request(cs, m); },
+                     [cs](BlacklistHostEnvMsg & m) {
+                         handle_blacklist_host_env(cs, m);
+                         return true;
+                     },
+                     [cs](auto & m) {
+                         log_info() << "Invalid message type arrived "
+                                    << message_type(m) << std::endl;
+                         handle_end(cs);
+                         return false;
+                     }),
+        msg);
 }
 
 int
@@ -1774,10 +1706,10 @@ handle_scheduler_announce(const char *       buf,
                         << std::endl;
                     if (!css.empty() || !monitors.empty()) {
                         while (!css.empty()) {
-                            handle_end(css.front(), nullptr);
+                            handle_end(css.front());
                         }
                         while (!monitors.empty()) {
-                            handle_end(monitors.front(), nullptr);
+                            handle_end(monitors.front());
                         }
                     }
                 }
@@ -2239,9 +2171,9 @@ main(int argc, char * argv[])
 
     shutdown(broad_fd, SHUT_RDWR);
     while (!css.empty())
-        handle_end(css.front(), nullptr);
+        handle_end(css.front());
     while (!monitors.empty())
-        handle_end(monitors.front(), nullptr);
+        handle_end(monitors.front());
     if ((-1 == close(broad_fd)) && (errno != EBADF)) {
         log_perror("close failed");
     }

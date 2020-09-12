@@ -60,7 +60,7 @@ start_install_environment(const std::string & basename,
                           MsgChannel *        c,
                           int &               pipe_to_child,
                           int &               pipe_from_child,
-                          FileChunkMsg *&     fmsg,
+                          FileChunkMsg &      fmsg,
                           uid_t               user_uid,
                           gid_t               user_gid,
                           int                 extract_priority);

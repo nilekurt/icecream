@@ -438,7 +438,7 @@ start_install_environment(const std::string & basename,
                           MsgChannel *        c,
                           int &               pipe_to_child,
                           int &               pipe_from_child,
-                          FileChunkMsg *&     fmsg,
+                          FileChunkMsg &      out_fcmsg,
                           uid_t               user_uid,
                           gid_t               user_gid,
                           int                 extract_priority)
@@ -462,14 +462,15 @@ start_install_environment(const std::string & basename,
     }
 
     std::string dirname = basename + "/target=" + target;
-    Msg *       msg = c->get_msg(30);
+    Msg         msg = c->get_msg(30);
 
-    if (!msg || msg->type != M_FILE_CHUNK) {
+    auto * fcmsg = ext::get_if<FileChunkMsg>(&msg);
+    if (fcmsg == nullptr) {
         trace() << "Expected first file chunk\n";
         return 0;
     }
 
-    fmsg = dynamic_cast<FileChunkMsg *>(msg);
+    out_fcmsg = std::move(*fcmsg);
 
     if (mkdir(dirname.c_str(), 0770) && errno != EEXIST) {
         log_perror("mkdir target") << "\t" << dirname << std::endl;
@@ -589,7 +590,8 @@ start_install_environment(const std::string & basename,
     archive_write_disk_set_options(ext, flags);
     archive_write_disk_set_standard_lookup(ext);
 
-    if (archive_read_open_fd(a, fds_in[0], fmsg->len) != ARCHIVE_OK) {
+    if (archive_read_open_fd(a, fds_in[0], out_fcmsg.buffer.size()) !=
+        ARCHIVE_OK) {
         log_error()
             << "start_install_environment: archive_read_open_fd() failed"
             << std::endl;

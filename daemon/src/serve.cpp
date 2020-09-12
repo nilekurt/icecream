@@ -102,9 +102,7 @@ write_output_file(const std::string & file, MsgChannel * client)
                 break;
             }
 
-            FileChunkMsg fcmsg(buffer, bytes);
-
-            if (!client->send_msg(fcmsg)) {
+            if (!client->send_msg(FileChunkMsg(buffer, bytes))) {
                 log_info() << "write of obj chunk failed " << bytes
                            << std::endl;
                 throw DaemonException(EXIT_DISTCC_FAILED);

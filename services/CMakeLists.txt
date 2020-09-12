@@ -43,8 +43,9 @@ target_compile_definitions(icecc_la
     $<$<BOOL:${HAVE_GETLOADAVG}>:HAVE_GETLOADAVG>
     $<$<BOOL:${HAVE_IFR_DSTADDR}>:HAVE_IFR_DSTADDR>)
 target_include_directories(icecc_la
-    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/include)
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_link_libraries(icecc_la
+    PUBLIC extensions
     PRIVATE copts_common -lzstd -llzo2 -ldl)
 
 if (ICECREAM_LTO)

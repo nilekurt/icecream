@@ -430,56 +430,59 @@ work_it(CompileJob &        j,
     gettimeofday(&starttv, nullptr);
 
     int return_value = 0;
-    // Got EOF for preprocessed input. stdout send may be still pending.
-    bool input_complete = false;
     // Pending data to send to stdin
-    FileChunkMsg * fcmsg = nullptr;
-    size_t         off = 0;
+    ext::optional<FileChunkMsg> maybe_fcmsg{};
+    size_t                      off = 0;
 
     LogBlock parent_wait("parent, waiting");
 
+    // Got EOF for preprocessed input. stdout send may be still pending.
+    bool input_complete = false;
     for (;;) {
-        if (client_fd >= 0 && !fcmsg) {
-            if (Msg * msg = client->get_msg(0, true)) {
+        if (client_fd >= 0 && !maybe_fcmsg.has_value()) {
+            auto msg = client->get_msg(0, true);
+
+            if (!ext::holds_alternative<ext::monostate>(msg)) {
                 if (input_complete) {
                     rmsg.err.append("client cancelled\n");
                     return_value = EXIT_CLIENT_KILLED;
                     client_fd = -1;
                     kill(pid, SIGTERM);
-                    delete fcmsg;
-                    fcmsg = nullptr;
-                    delete msg;
+                    maybe_fcmsg.reset();
                 } else {
-                    if (msg->type == M_END) {
-                        input_complete = true;
+                    ext::visit(
+                        make_visitor(
+                            [&](EndMsg && /*unused*/) {
+                                input_complete = true;
 
-                        if (!fcmsg && sock_in[1] != -1) {
-                            if (-1 == close(sock_in[1])) {
-                                log_perror("close failed");
-                            }
-                            sock_in[1] = -1;
-                        }
+                                if (!maybe_fcmsg.has_value() &&
+                                    sock_in[1] != -1) {
+                                    if (-1 == close(sock_in[1])) {
+                                        log_perror("close failed");
+                                    }
+                                    sock_in[1] = -1;
+                                }
+                            },
+                            [&](FileChunkMsg && m) {
+                                job_stat[JobStatistics::in_uncompressed] +=
+                                    m.buffer.size();
+                                job_stat[JobStatistics::in_compressed] +=
+                                    m.compressed;
 
-                        delete msg;
-                    } else if (msg->type == M_FILE_CHUNK) {
-                        fcmsg = static_cast<FileChunkMsg *>(msg);
-                        off = 0;
-
-                        job_stat[JobStatistics::in_uncompressed] += fcmsg->len;
-                        job_stat[JobStatistics::in_compressed] +=
-                            fcmsg->compressed;
-                    } else {
-                        log_error()
-                            << "protocol error while reading preprocessed file"
-                            << std::endl;
-                        input_complete = true;
-                        return_value = EXIT_IO_ERROR;
-                        client_fd = -1;
-                        kill(pid, SIGTERM);
-                        delete fcmsg;
-                        fcmsg = nullptr;
-                        delete msg;
-                    }
+                                off = 0;
+                                maybe_fcmsg = std::move(m);
+                            },
+                            [&](auto && /*unused*/) {
+                                log_error() << "protocol error while reading "
+                                               "preprocessed file"
+                                            << std::endl;
+                                input_complete = true;
+                                return_value = EXIT_IO_ERROR;
+                                client_fd = -1;
+                                kill(pid, SIGTERM);
+                                maybe_fcmsg.reset();
+                            }),
+                        std::move(msg));
                 }
             } else if (client->at_eof()) {
                 log_warning()
@@ -489,8 +492,7 @@ work_it(CompileJob &        j,
                 return_value = EXIT_IO_ERROR;
                 client_fd = -1;
                 kill(pid, SIGTERM);
-                delete fcmsg;
-                fcmsg = nullptr;
+                maybe_fcmsg.reset();
             }
         }
 
@@ -509,17 +511,16 @@ work_it(CompileJob &        j,
             pollfds.push_back(pfd);
         }
 
-        if (sock_in[1] == -1 && fcmsg) {
+        if (sock_in[1] == -1 && maybe_fcmsg.has_value()) {
             // This state can occur when the compiler has terminated before
             // all file input is received from the client.  The daemon must
             // continue reading all file input from the client because the
             // client expects it to. Deleting the file chunk message here tricks
             // the poll() below to continue listening for more file data from
             // the client even though it is being thrown away.
-            delete fcmsg;
-            fcmsg = nullptr;
+            maybe_fcmsg.reset();
         }
-        if (client_fd >= 0 && !fcmsg) {
+        if (client_fd >= 0 && !maybe_fcmsg.has_value()) {
             pfd.fd = client_fd;
             pfd.events = POLLIN;
             pollfds.push_back(pfd);
@@ -542,7 +543,7 @@ work_it(CompileJob &        j,
 
         // Don't try to write to sock_in it if was already closed because
         // the compile terminated before reading all of the file data.
-        if (fcmsg && sock_in[1] != -1) {
+        if (maybe_fcmsg.has_value() && sock_in[1] != -1) {
             pfd.fd = sock_in[1];
             pfd.events = POLLOUT;
             pollfds.push_back(pfd);
@@ -560,8 +561,7 @@ work_it(CompileJob &        j,
                     return_value = EXIT_IO_ERROR;
                     client_fd = -1;
                     input_complete = true;
-                    delete fcmsg;
-                    fcmsg = nullptr;
+                    maybe_fcmsg.reset();
                     continue;
                 }
 
@@ -579,9 +579,13 @@ work_it(CompileJob &        j,
                 return EXIT_DISTCC_FAILED;
             default:
 
-                if (fcmsg && pollfd_is_set(pollfds, sock_in[1], POLLOUT)) {
-                    ssize_t bytes = write(
-                        sock_in[1], fcmsg->buffer + off, fcmsg->len - off);
+                if (maybe_fcmsg.has_value() &&
+                    pollfd_is_set(pollfds, sock_in[1], POLLOUT)) {
+                    auto & fcmsg = *maybe_fcmsg;
+
+                    ssize_t bytes = write(sock_in[1],
+                                          &fcmsg.buffer[off],
+                                          fcmsg.buffer.size() - off);
 
                     if (bytes < 0) {
                         if (errno == EINTR) {
@@ -592,8 +596,7 @@ work_it(CompileJob &        j,
                         if (input_complete) {
                             return_value = EXIT_COMPILER_CRASHED;
                         }
-                        delete fcmsg;
-                        fcmsg = nullptr;
+                        maybe_fcmsg.reset();
                         if (-1 == close(sock_in[1])) {
                             log_perror("close failed");
                         }
@@ -603,9 +606,8 @@ work_it(CompileJob &        j,
 
                     off += bytes;
 
-                    if (off == fcmsg->len) {
-                        delete fcmsg;
-                        fcmsg = nullptr;
+                    if (off == fcmsg.buffer.size()) {
+                        maybe_fcmsg.reset();
 
                         if (input_complete) {
                             if (-1 == close(sock_in[1])) {
