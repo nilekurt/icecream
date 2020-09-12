@@ -33,7 +33,7 @@
 #include "md5.h"
 #include "pipes.h"
 #include "services_util.hh"
-#include "tempfile.h"
+#include "tempfile.hh"
 
 extern "C" {
 #include <arpa/inet.h>
@@ -46,6 +46,7 @@ extern "C" {
 
 #include <algorithm>
 #include <map>
+#include <unordered_map>
 
 #ifndef O_LARGEFILE
 #define O_LARGEFILE 0
@@ -55,23 +56,19 @@ std::string remote_daemon;
 
 namespace {
 
-struct CharBufferDeleter {
-    char * buf;
-    explicit CharBufferDeleter(char * b) : buf(b) {}
-    ~CharBufferDeleter()
-    {
-        free(buf);
-    }
-};
-
 bool
-endswith(const std::string & orig, const char * suff, std::string & ret)
+endswith(const std::string & orig,
+         const std::string & suffix,
+         std::string &       ret)
 {
-    size_t len = strlen(suff);
 
-    if (orig.size() > len && orig.substr(orig.size() - len) == suff) {
-        ret = orig.substr(0, orig.size() - len);
-        return true;
+    if (orig.size() > suffix.size()) {
+        const auto base_length = orig.size() - suffix.size();
+
+        if (orig.substr(base_length).compare(suffix) == 0) {
+            ret = orig.substr(0, base_length);
+            return true;
+        }
     }
 
     return false;
@@ -86,20 +83,22 @@ rip_out_paths(const Environments &                 envs,
 
     Environments env2;
 
-    static const char * suffs[] = {
-        ".tar.xz", ".tar.zst", ".tar.bz2", ".tar.gz", ".tar", ".tgz", nullptr};
+    // @TODO: make_array
+    constexpr std::array<const char *, 6> suffixes{
+        ".tar.xz", ".tar.zst", ".tar.bz2", ".tar.gz", ".tar", ".tgz"};
 
     std::string versfile;
 
     // host platform + filename
-    for (const std::pair<std::string, std::string> & env : envs) {
-        for (int i = 0; suffs[i] != nullptr; i++)
-            if (endswith(env.second, suffs[i], versfile)) {
+    for (const auto & env : envs) {
+        for (const char * suffix : suffixes) {
+            if (endswith(env.second, suffix, versfile)) {
                 versionfile_map[env.first] = env.second;
                 versfile = find_basename(versfile);
                 version_map[env.first] = versfile;
                 env2.push_back(make_pair(env.first, versfile));
             }
+        }
     }
 
     return env2;
@@ -110,7 +109,7 @@ get_niceness()
 {
     errno = 0;
     int niceness = getpriority(PRIO_PROCESS, getpid());
-    if (niceness == -1 && errno != 0)
+    if ((niceness < 0) && (errno != 0))
         niceness = 0;
     return niceness;
 }
@@ -229,7 +228,7 @@ write_fd_to_server(int fd, MsgChannel * cserver, bool unlock_sending = false)
         trace() << "sent " << compressed << " bytes ("
                 << (compressed * 100 / uncompressed) << "%)" << std::endl;
 
-    if ((-1 == close(fd)) && (errno != EBADF)) {
+    if ((close(fd) < 0) && (errno != EBADF)) {
         log_perror("close failed");
     }
 }
@@ -241,7 +240,7 @@ receive_file(const std::string & output_file, MsgChannel * cserver)
     int         obj_fd = open(
         tmp_file.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_LARGEFILE, 0666);
 
-    if (obj_fd == -1) {
+    if (obj_fd < 0) {
         std::string errmsg("can't create ");
         errmsg += tmp_file + ":";
         log_perror(errmsg.c_str());
@@ -470,7 +469,7 @@ build_remote_int(CompileJob &        job,
                closed the write fd, i.e. sockets[1].  */
             pid_t cpp_pid = call_cpp(job, sockets[1], sockets[0]);
 
-            if (cpp_pid == -1) {
+            if (cpp_pid < 0) {
                 throw ClientError(18, "Error 18 - (fork error?)");
             }
 
@@ -484,7 +483,7 @@ build_remote_int(CompileJob &        job,
 
             LogBlock wait_cpp("wait for cpp");
 
-            while (waitpid(cpp_pid, &status, 0) < 0 && errno == EINTR) {
+            while ((waitpid(cpp_pid, &status, 0) < 0) && (errno == EINTR)) {
             }
 
             if (shell_exit_status(status) != 0) { // failure
@@ -858,23 +857,25 @@ build_remote(CompileJob &         job,
              const Environments & _envs,
              int                  permill)
 {
+    constexpr int default_exit_code = 42;
+
     srand(time(nullptr) + getpid());
 
-    int  torepeat = 1;
+    int  to_repeat = 1;
     bool has_split_dwarf = job.dwarfFissionEnabled();
 
     if (!compiler_is_clang(job)) {
         if (rand() % 1000 < permill) {
-            torepeat = 3;
+            to_repeat = 3;
         }
     }
 
-    if (torepeat == 1) {
+    if (to_repeat == 1) {
         trace() << "preparing " << job.inputFile() << " to be compiled for "
                 << job.targetPlatform() << "\n";
     } else {
         trace() << "preparing " << job.inputFile() << " to be compiled "
-                << torepeat << " times for " << job.targetPlatform() << "\n";
+                << to_repeat << " times for " << job.targetPlatform() << "\n";
     }
 
     std::map<std::string, std::string> versionfile_map, version_map;
@@ -889,7 +890,7 @@ build_remote(CompileJob &         job,
 
     const char * preferred_host = getenv("ICECC_PREFERRED_HOST");
 
-    if (torepeat == 1) {
+    if (to_repeat == 1) {
         std::string            fake_filename;
         std::list<std::string> args = job.remoteFlags();
 
@@ -908,7 +909,7 @@ build_remote(CompileJob &         job,
         GetCSMsg getcs(envs,
                        fake_filename,
                        job.language(),
-                       torepeat,
+                       to_repeat,
                        job.targetPlatform(),
                        job.argumentFlags(),
                        preferred_host ? preferred_host : std::string(),
@@ -942,10 +943,12 @@ build_remote(CompileJob &         job,
         delete usecs;
         return ret;
     } else {
-        char * preproc = nullptr;
-        dcc_make_tmpnam("icecc", ".ix", &preproc, 0);
-        const CharBufferDeleter preproc_holder(preproc);
-        int                     cpp_fd = open(preproc, O_WRONLY);
+        std::string preproc;
+        if (dcc_make_tmpnam("icecc", ".ix", preproc, 0) != 0) {
+            throw std::runtime_error("Unable to make tmpname");
+        }
+
+        int cpp_fd = open(preproc.c_str(), O_WRONLY);
 
         if (!dcc_lock_host()) {
             log_error() << "can't lock for local cpp" << std::endl;
@@ -957,8 +960,8 @@ build_remote(CompileJob &         job,
            the write fd, i.e. cpp_fd.  */
         pid_t cpp_pid = call_cpp(job, cpp_fd);
 
-        if (cpp_pid == -1) {
-            ::unlink(preproc);
+        if (cpp_pid < 0) {
+            unlink(preproc.c_str());
             throw ClientError(10, "Error 10 - (unable to fork process?)");
         }
 
@@ -968,7 +971,7 @@ build_remote(CompileJob &         job,
         if (shell_exit_status(status)) { // failure
             log_warning() << "call_cpp process failed with exit status "
                           << shell_exit_status(status) << std::endl;
-            ::unlink(preproc);
+            unlink(preproc.c_str());
             return shell_exit_status(status);
         }
         dcc_unlock();
@@ -980,7 +983,7 @@ build_remote(CompileJob &         job,
         GetCSMsg getcs(envs,
                        get_absfilename(job.inputFile()),
                        job.language(),
-                       torepeat,
+                       to_repeat,
                        job.targetPlatform(),
                        job.argumentFlags(),
                        preferred_host ? preferred_host : std::string(),
@@ -993,29 +996,22 @@ build_remote(CompileJob &         job,
             throw ClientError(0, "Error 0 - asked for CS");
         }
 
-        std::map<pid_t, int> jobmap;
-        CompileJob *         jobs = new CompileJob[torepeat];
-        UseCSMsg **          umsgs = new UseCSMsg *[torepeat];
+        std::unordered_map<pid_t, int> jobmap;
+        std::vector<CompileJob>        jobs(to_repeat, job);
+        std::vector<UseCSMsg *>        umsgs(to_repeat, nullptr);
+        std::vector<int>               exit_codes(to_repeat, default_exit_code);
+        bool                           misc_error = false;
 
-        bool  misc_error = false;
-        int * exit_codes = new int[torepeat];
+        // Launch build processes
+        for (int i = 0; i < to_repeat; i++) {
+            std::string buffer{};
 
-        for (int i = 0; i < torepeat; i++) { // init
-            exit_codes[i] = 42;
-        }
-
-        for (int i = 0; i < torepeat; i++) {
-            jobs[i] = job;
-            char * buffer = nullptr;
-
-            if (i) {
-                dcc_make_tmpnam("icecc", ".o", &buffer, 0);
+            if (i != 0) {
+                dcc_make_tmpnam("icecc", ".o", buffer, 0);
                 jobs[i].setOutputFile(buffer);
             } else {
-                buffer = strdup(job.outputFile().c_str());
+                buffer = job.outputFile();
             }
-
-            const CharBufferDeleter buffer_holder(buffer);
 
             umsgs[i] = get_server(local_daemon);
 
@@ -1027,7 +1023,7 @@ build_remote(CompileJob &         job,
 
             pid_t pid = fork();
 
-            if (pid == -1) {
+            if (pid < 0) {
                 log_perror("failure of fork");
                 status = -1;
             }
@@ -1044,7 +1040,7 @@ build_remote(CompileJob &         job,
                             local_daemon,
                             version_map[umsgs[i]->host_platform],
                             versionfile_map[umsgs[i]->host_platform],
-                            preproc,
+                            preproc.c_str(),
                             i == 0);
                 } catch (const std::exception & e) {
                     log_info() << "build_remote_int failed and has thrown "
@@ -1060,7 +1056,7 @@ build_remote(CompileJob &         job,
             jobmap[pid] = i;
         }
 
-        for (int i = 0; i < torepeat; i++) {
+        for (int i = 0; i < to_repeat; i++) {
             pid_t pid = wait(&status);
 
             if (pid < 0) {
@@ -1080,7 +1076,7 @@ build_remote(CompileJob &         job,
         if (!misc_error) {
             std::string first_md5 = md5_for_file(jobs[0].outputFile());
 
-            for (int i = 1; i < torepeat; i++) {
+            for (int i = 1; i < to_repeat; i++) {
                 if (!exit_codes[0]) { // if the first failed, we fail anyway
                     if (exit_codes[i] ==
                         42) { // they are free to fail for misc reasons
@@ -1093,7 +1089,7 @@ build_remote(CompileJob &         job,
                             << exit_codes[i] << " and " << umsgs[0]->hostname
                             << " compiled with exit code " << exit_codes[0]
                             << " - aborting!\n";
-                        if (-1 == ::unlink(jobs[0].outputFile().c_str())) {
+                        if (unlink(jobs[0].outputFile().c_str()) < 0) {
                             log_perror("unlink outputFile failed")
                                 << "\t" << jobs[0].outputFile() << std::endl;
                         }
@@ -1102,7 +1098,7 @@ build_remote(CompileJob &         job,
                                 jobs[0].outputFile().substr(
                                     0, jobs[0].outputFile().rfind('.')) +
                                 ".dwo";
-                            if (-1 == ::unlink(dwo_file.c_str())) {
+                            if (unlink(dwo_file.c_str()) < 0) {
                                 log_perror("unlink failed")
                                     << "\t" << dwo_file << std::endl;
                             }
@@ -1123,7 +1119,7 @@ build_remote(CompileJob &         job,
                             << " - aborting!\n";
                         rename(jobs[0].outputFile().c_str(),
                                (jobs[0].outputFile() + ".caught").c_str());
-                        rename(preproc,
+                        rename(preproc.c_str(),
                                (std::string(preproc) + ".caught").c_str());
                         if (has_split_dwarf) {
                             std::string dwo_file =
@@ -1138,7 +1134,7 @@ build_remote(CompileJob &         job,
                     }
                 }
 
-                if (-1 == ::unlink(jobs[i].outputFile().c_str())) {
+                if (unlink(jobs[i].outputFile().c_str()) < 0) {
                     log_perror("unlink failed")
                         << "\t" << jobs[i].outputFile() << std::endl;
                 }
@@ -1147,7 +1143,7 @@ build_remote(CompileJob &         job,
                         jobs[i].outputFile().substr(
                             0, jobs[i].outputFile().rfind('.')) +
                         ".dwo";
-                    if (-1 == ::unlink(dwo_file.c_str())) {
+                    if (unlink(dwo_file.c_str()) < 0) {
                         log_perror("unlink failed")
                             << "\t" << dwo_file << std::endl;
                     }
@@ -1155,7 +1151,7 @@ build_remote(CompileJob &         job,
                 delete umsgs[i];
             }
         } else {
-            if (-1 == ::unlink(jobs[0].outputFile().c_str())) {
+            if (unlink(jobs[0].outputFile().c_str()) < 0) {
                 log_perror("unlink failed")
                     << "\t" << jobs[0].outputFile() << std::endl;
             }
@@ -1163,14 +1159,14 @@ build_remote(CompileJob &         job,
                 std::string dwo_file = jobs[0].outputFile().substr(
                                            0, jobs[0].outputFile().rfind('.')) +
                                        ".dwo";
-                if (-1 == ::unlink(dwo_file.c_str())) {
+                if (unlink(dwo_file.c_str()) < 0) {
                     log_perror("unlink failed")
                         << "\t" << dwo_file << std::endl;
                 }
             }
 
-            for (int i = 1; i < torepeat; i++) {
-                if (-1 == ::unlink(jobs[i].outputFile().c_str())) {
+            for (int i = 1; i < to_repeat; i++) {
+                if (unlink(jobs[i].outputFile().c_str()) < 0) {
                     log_perror("unlink failed")
                         << "\t" << jobs[i].outputFile() << std::endl;
                 }
@@ -1179,7 +1175,7 @@ build_remote(CompileJob &         job,
                         jobs[i].outputFile().substr(
                             0, jobs[i].outputFile().rfind('.')) +
                         ".dwo";
-                    if (-1 == ::unlink(dwo_file.c_str())) {
+                    if (unlink(dwo_file.c_str()) < 0) {
                         log_perror("unlink failed")
                             << "\t" << dwo_file << std::endl;
                     }
@@ -1190,15 +1186,11 @@ build_remote(CompileJob &         job,
 
         delete umsgs[0];
 
-        if (-1 == ::unlink(preproc)) {
+        if (unlink(preproc.c_str()) < 0) {
             log_perror("unlink failed") << "\t" << preproc << std::endl;
         }
 
         int ret = exit_codes[0];
-
-        delete[] umsgs;
-        delete[] jobs;
-        delete[] exit_codes;
 
         if (misc_error) {
             throw ClientError(27, "Error 27 - misc error");

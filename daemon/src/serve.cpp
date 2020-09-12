@@ -31,7 +31,7 @@
 #include "logging.hh"
 #include "services_job.hh"
 #include "services_util.hh"
-#include "tempfile.h"
+#include "tempfile.hh"
 #include "workit.hh"
 
 extern "C" {
@@ -211,16 +211,14 @@ handle_connection(const std::string & basedir,
         CompileResultMsg rmsg;
         unsigned int     job_id = job->jobID();
 
-        char * tmp_output = nullptr;
         char prefix_output[32]; // 20 for 2^64 + 6 for "icecc-" + 1 for trailing
                                 // NULL
         sprintf(prefix_output, "icecc-%u", job_id);
 
+        std::string tmp_output{};
         if (job->dwarfFissionEnabled() &&
-            (ret = dcc_make_tmpdir(&tmp_output)) == 0) {
-            tmp_path = tmp_output;
-            free(tmp_output);
-
+            (ret = dcc_make_tmpdir(tmp_output) == 0)) {
+            tmp_path = std::move(tmp_output);
             // dwo information is embedded in the final object file, but the
             // compiler hard codes the path to the dwo file based on the given
             // path to the object output file. In every case, we must recreate
@@ -291,9 +289,9 @@ handle_connection(const std::string & basedir,
                           client->fd);
         } else if (!job->dwarfFissionEnabled() &&
                    (ret = dcc_make_tmpnam(
-                        prefix_output, ".o", &tmp_output, 0)) == 0) {
+                        prefix_output, ".o", tmp_output, 0)) == 0) {
             obj_file = tmp_output;
-            free(tmp_output);
+
             std::string build_path = obj_file.substr(0, obj_file.rfind('/'));
             std::string file_name = obj_file.substr(obj_file.rfind('/') + 1);
 

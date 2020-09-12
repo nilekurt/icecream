@@ -21,23 +21,17 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef _TEMPFILE_H_
-#define _TEMPFILE_H_
+#ifndef _TEMPFILE_HH_
+#define _TEMPFILE_HH_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <string>
 
 int
-dcc_make_tmpnam(const char * prefix,
-                const char * suffix,
-                char **      name_ret,
-                int          relative);
+dcc_make_tmpnam(const char *  prefix,
+                const char *  suffix,
+                std::string & name_ret,
+                int           relative);
 int
-dcc_make_tmpdir(char ** name_ret);
+dcc_make_tmpdir(std::string & name_ret);
 
-#ifdef __cplusplus
-}
-#endif
-
-#endif // _TEMPFILE_H_
+#endif // _TEMPFILE_HH_
