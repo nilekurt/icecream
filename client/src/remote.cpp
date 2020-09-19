@@ -195,9 +195,9 @@ write_fd_to_server(int fd, MsgChannel * cserver, bool unlock_sending = false)
                     dcc_unlock();
                 Msg msg{ext::in_place_type_t<FileChunkMsg>{}, buffer, offset};
 
-                if (!cserver->send_msg(msg)) {
+                if (!cserver->sendMsg(msg)) {
                     constexpr int timeout{2};
-                    auto          msg = cserver->get_msg(timeout);
+                    auto          msg = cserver->getMsg(timeout);
                     check_for_failure(msg, cserver);
 
                     log_error() << "write of source chunk to host "
@@ -228,9 +228,14 @@ write_fd_to_server(int fd, MsgChannel * cserver, bool unlock_sending = false)
         }
     } while (1);
 
-    if (compressed)
+    if (compressed) {
+        auto percentage_part = [](auto part, auto total) {
+            return 100.0F * part / total;
+        };
         trace() << "sent " << compressed << " bytes ("
-                << (compressed * 100 / uncompressed) << "%)" << std::endl;
+                << percentage_part(compressed, uncompressed) << "%)"
+                << std::endl;
+    }
 
     if ((close(fd) < 0) && (errno != EBADF)) {
         log_perror("close failed");
@@ -256,7 +261,7 @@ receive_file(const std::string & output_file, MsgChannel * cserver)
 
     while (1) {
         constexpr int timeout{40};
-        auto          msg = cserver->get_msg(timeout);
+        auto          msg = cserver->getMsg(timeout);
 
         if (ext::holds_alternative<ext::monostate>(
                 msg)) { // the network went down?
@@ -356,7 +361,7 @@ build_remote_int(CompileJob &        job,
 
             EnvTransferMsg msg(job.targetPlatform(), job.environmentVersion());
 
-            if (!cserver->send_msg(msg)) {
+            if (!cserver->sendMsg(msg)) {
                 throw ClientError(
                     6, "Error 6 - send environment to remote failed");
             }
@@ -371,7 +376,7 @@ build_remote_int(CompileJob &        job,
 
             write_fd_to_server(env_fd, cserver);
 
-            if (!cserver->send_msg(EndMsg())) {
+            if (!cserver->sendMsg(EndMsg())) {
                 log_error() << "write of environment failed" << std::endl;
                 throw ClientError(
                     8, "Error 8 - write environment to remote failed");
@@ -381,13 +386,13 @@ build_remote_int(CompileJob &        job,
                 VerifyEnvMsg verifymsg(job.targetPlatform(),
                                        job.environmentVersion());
 
-                if (!cserver->send_msg(verifymsg)) {
+                if (!cserver->sendMsg(verifymsg)) {
                     throw ClientError(22,
                                       "Error 22 - error sending environment");
                 }
 
                 constexpr int timeout{60};
-                auto          msg = cserver->get_msg(timeout);
+                auto          msg = cserver->getMsg(timeout);
 
                 auto * verify_env = ext::get_if<VerifyEnvResultMsg>(&msg);
                 if (verify_env != nullptr) {
@@ -402,7 +407,7 @@ build_remote_int(CompileJob &        job,
                         BlacklistHostEnvMsg blacklist(job.targetPlatform(),
                                                       job.environmentVersion(),
                                                       hostname);
-                        local_daemon->send_msg(blacklist);
+                        local_daemon->sendMsg(blacklist);
                         throw ClientError(24,
                                           "Error 24 - remote " + hostname +
                                               " unable to handle environment");
@@ -431,17 +436,17 @@ build_remote_int(CompileJob &        job,
         if ((job.language() == CompileJob::Lang_OBJC ||
              job.language() == CompileJob::Lang_OBJCXX) &&
             !IS_PROTOCOL_38(cserver)) {
-            job.appendFlag("-x", Arg_Remote);
+            job.appendFlag("-x", ArgumentType::REMOTE);
             job.appendFlag(job.language() == CompileJob::Lang_OBJC
                                ? "objective-c"
                                : "objective-c++",
-                           Arg_Remote);
+                           ArgumentType::REMOTE);
         }
 
         {
             LogBlock b("send compile_file");
 
-            if (!cserver->send_msg(CompileFileMsg{job})) {
+            if (!cserver->sendMsg(CompileFileMsg{job})) {
                 log_warning() << "write of job failed" << std::endl;
                 throw ClientError(9, "Error 9 - error sending file to remote");
             }
@@ -517,7 +522,7 @@ build_remote_int(CompileJob &        job,
             write_fd_to_server(cpp_fd, cserver);
         }
 
-        if (!cserver->send_msg(EndMsg())) {
+        if (!cserver->sendMsg(EndMsg())) {
             log_warning() << "write of end failed" << std::endl;
             throw ClientError(12, "Error 12 - failed to send file to remote");
         }
@@ -526,7 +531,7 @@ build_remote_int(CompileJob &        job,
         {
             LogBlock      wait_cs("wait for cs");
             constexpr int timeout{12 * 60};
-            msg = cserver->get_msg(timeout);
+            msg = cserver->getMsg(timeout);
         }
 
         check_for_failure(msg, cserver);
@@ -603,7 +608,7 @@ build_remote_int(CompileJob &        job,
         if (cserver) {
             Msg msg{};
             do {
-                msg = cserver->get_msg(0, true);
+                msg = cserver->getMsg(0, true);
                 if (auto * stmsg = ext::get_if<StatusTextMsg>(&msg)) {
                     log_error()
                         << "Remote status (compiled on " << cserver->name
@@ -680,7 +685,7 @@ maybe_build_local(MsgChannel *     local_daemon,
         job.setJobID(job_id);
         job.setEnvironmentVersion("__client");
 
-        if (!local_daemon->send_msg(CompileFileMsg{job})) {
+        if (!local_daemon->sendMsg(CompileFileMsg{job})) {
             log_warning() << "write of job failed" << std::endl;
             throw ClientError(29, "Error 29 - write of job failed");
         }
@@ -724,7 +729,7 @@ maybe_build_local(MsgChannel *     local_daemon,
                     << std::endl;
         }
 
-        return local_daemon->send_msg(msg);
+        return local_daemon->sendMsg(msg);
     }
 
     return false;
@@ -905,12 +910,12 @@ build_remote(CompileJob &         job,
                        get_niceness());
 
         trace() << "asking for host to use" << std::endl;
-        if (!local_daemon->send_msg(getcs)) {
+        if (!local_daemon->sendMsg(getcs)) {
             log_warning() << "asked for CS" << std::endl;
             throw ClientError(24, "Error 24 - asked for CS");
         }
 
-        auto msg = local_daemon->get_msg(niceness_timeout());
+        auto msg = local_daemon->getMsg(niceness_timeout());
 
         const auto & usecs = get_use_cs(msg);
         int          ret;
@@ -962,7 +967,7 @@ build_remote(CompileJob &         job,
 
         char rand_seed[400]; // "designed to be oversized" (Levi's)
         sprintf(rand_seed, "-frandom-seed=%d", rand());
-        job.appendFlag(rand_seed, Arg_Remote);
+        job.appendFlag(rand_seed, ArgumentType::REMOTE);
 
         GetCSMsg getcs(envs,
                        get_absfilename(job.inputFile()),
@@ -975,7 +980,7 @@ build_remote(CompileJob &         job,
                        0,
                        get_niceness());
 
-        if (!local_daemon->send_msg(getcs)) {
+        if (!local_daemon->sendMsg(getcs)) {
             log_warning() << "asked for CS" << std::endl;
             throw ClientError(0, "Error 0 - asked for CS");
         }
@@ -1002,7 +1007,7 @@ build_remote(CompileJob &         job,
                 buffer = job.outputFile();
             }
 
-            auto msg = local_daemon->get_msg(niceness_timeout());
+            auto msg = local_daemon->getMsg(niceness_timeout());
             msgs.emplace_back(std::move(msg));
 
             UseCSMsg & umsg = get_use_cs(msgs.back());

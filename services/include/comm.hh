@@ -222,25 +222,25 @@ public:
     ~DiscoverSched();
 
     bool
-    timed_out();
+    timedOut();
 
     int
-    listen_fd() const
+    listenFd() const
     {
         return schedname.empty() ? ask_fd : -1;
     }
 
     int
-    connect_fd() const
+    connectFd() const
     {
         return schedname.empty() ? -1 : ask_fd;
     }
 
     // compat for icecream monitor
     int
-    get_fd() const
+    getFd() const
     {
-        return listen_fd();
+        return listenFd();
     }
 
     /* Attempt to get a conenction to the scheduler.
@@ -250,10 +250,10 @@ public:
        more data on listen_fd() (use select), or a timeout of your own.
        */
     MsgChannel *
-    try_get_scheduler();
+    tryGetScheduler();
 
     // Returns the hostname of the scheduler - set by constructor or by
-    // try_get_scheduler
+    // tryGetScheduler
     std::string
     schedulerName() const
     {
@@ -261,7 +261,7 @@ public:
     }
 
     // Returns the network name of the scheduler - set by constructor or by
-    // try_get_scheduler
+    // tryGetScheduler
     std::string
     networkName() const
     {
@@ -297,20 +297,22 @@ private:
     bool               multiple;
 
     void
-    attempt_scheduler_connect();
+    attemptSchedulerConnect();
+
     void
     sendSchedulerDiscovery(int version);
+
     static bool
-    get_broad_answer(int                  ask_fd,
-                     int                  timeout,
-                     char *               buf2,
-                     struct sockaddr_in * remote_addr,
-                     socklen_t *          remote_len);
+    getBroadAnswer(int                  ask_fd,
+                   int                  timeout,
+                   char *               buf2,
+                   struct sockaddr_in * remote_addr,
+                   socklen_t *          remote_len);
     static void
-    get_broad_data(const char *  buf,
-                   const char ** name,
-                   int *         version,
-                   time_t *      start_time);
+    getBroadData(const char *  buf,
+                 const char ** out_string,
+                 int *         out_version,
+                 time_t *      out_start_time);
 };
 // --------------------------------------------------------------------------
 
@@ -321,12 +323,12 @@ get_netnames(int waittime = 2000, int port = 8765);
 
 struct PingMsg {
     void
-    fill_from_channel(MsgChannel * /*unused*/)
+    fillFromChannel(MsgChannel * /*unused*/)
     {
     }
 
     void
-    send_to_channel(MsgChannel * /*unused*/) const
+    sendToChannel(MsgChannel * /*unused*/) const
     {
     }
 
@@ -339,12 +341,12 @@ struct PingMsg {
 
 struct EndMsg {
     void
-    fill_from_channel(MsgChannel * /*unused*/)
+    fillFromChannel(MsgChannel * /*unused*/)
     {
     }
 
     void
-    send_to_channel(MsgChannel * /*unused*/) const
+    sendToChannel(MsgChannel * /*unused*/) const
     {
     }
 
@@ -374,9 +376,9 @@ struct GetCSMsg {
              unsigned int         _client_count = 0);
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -418,9 +420,9 @@ struct UseCSMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -445,9 +447,9 @@ struct NoCSMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -470,9 +472,9 @@ struct GetNativeEnvMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -491,9 +493,9 @@ struct UseNativeEnvMsg {
     UseNativeEnvMsg(const std::string & _native) : nativeVersion{_native} {}
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -530,9 +532,9 @@ struct CompileFileMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -548,7 +550,7 @@ struct CompileFileMsg {
 
 private:
     std::string
-    remote_compiler_name() const;
+    remoteCompilerName() const;
 
     CompileJob::UPtr job;
 };
@@ -583,9 +585,9 @@ struct FileChunkMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -604,9 +606,9 @@ struct CompileResultMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -630,9 +632,9 @@ struct JobBeginMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -667,28 +669,30 @@ struct JobDoneMsg {
                unsigned int _client_count = 0);
 
     void
-    set_from(from_type from)
+    setFrom(from_type from)
     {
         flags |= (uint32_t)from;
     }
 
     bool
-    is_from_server() const
+    isFromServer() const
     {
         return (flags & FROM_SUBMITTER) == 0;
     }
 
     void
-    set_unknown_job_client_id(uint32_t clientId);
+    setUnknownJobClientId(uint32_t clientId);
+
     uint32_t
-    unknown_job_client_id() const;
-    void
-    set_job_id(uint32_t jobId);
+    unknownJobClientId() const;
 
     void
-    fill_from_channel(MsgChannel * c);
+    setJobId(uint32_t jobId);
+
     void
-    send_to_channel(MsgChannel * c) const;
+    fillFromChannel(MsgChannel * c);
+    void
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -721,9 +725,9 @@ struct JobLocalBeginMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -740,9 +744,9 @@ struct JobLocalDoneMsg {
     JobLocalDoneMsg(uint32_t id = 0) : job_id{id} {}
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -761,9 +765,9 @@ struct LoginMsg {
     LoginMsg() {}
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -789,9 +793,9 @@ struct ConfCSMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -807,9 +811,9 @@ struct StatsMsg {
     StatsMsg() {}
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -845,9 +849,9 @@ struct EnvTransferMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -861,12 +865,12 @@ struct EnvTransferMsg {
 
 struct GetInternalStatusMsg {
     void
-    fill_from_channel(MsgChannel * /*unused*/)
+    fillFromChannel(MsgChannel * /*unused*/)
     {
     }
 
     void
-    send_to_channel(MsgChannel * /*unused*/) const
+    sendToChannel(MsgChannel * /*unused*/) const
     {
     }
 
@@ -879,12 +883,12 @@ struct GetInternalStatusMsg {
 
 struct MonLoginMsg {
     void
-    fill_from_channel(MsgChannel * /*unused*/)
+    fillFromChannel(MsgChannel * /*unused*/)
     {
     }
 
     void
-    send_to_channel(MsgChannel * /*unused*/) const
+    sendToChannel(MsgChannel * /*unused*/) const
     {
     }
 
@@ -918,9 +922,9 @@ struct MonGetCSMsg final : public GetCSMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -941,9 +945,9 @@ struct MonJobBeginMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -962,9 +966,9 @@ struct MonJobDoneMsg final : public JobDoneMsg {
     explicit MonJobDoneMsg(const JobDoneMsg & m) : JobDoneMsg(m) {}
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -985,9 +989,9 @@ struct MonLocalJobBeginMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -1010,9 +1014,9 @@ struct MonStatsMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -1030,9 +1034,9 @@ struct StatusTextMsg {
     StatusTextMsg(const std::string & _text) : text{_text} {}
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -1052,9 +1056,9 @@ struct VerifyEnvMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -1072,9 +1076,9 @@ struct VerifyEnvResultMsg {
     VerifyEnvResultMsg(bool _ok) : ok{_ok} {}
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -1096,9 +1100,9 @@ struct BlacklistHostEnvMsg {
     }
 
     void
-    fill_from_channel(MsgChannel * c);
+    fillFromChannel(MsgChannel * c);
     void
-    send_to_channel(MsgChannel * c) const;
+    sendToChannel(MsgChannel * c) const;
 
     static constexpr const char *
     msgName()
@@ -1182,26 +1186,26 @@ public:
     // NULL  <--> channel closed or timeout
     // Will warn in log if EOF and !eofAllowed.
     Msg
-    get_msg(int timeout = 10, bool eofAllowed = false);
+    getMsg(int timeout = 10, bool eofAllowed = false);
 
     // false <--> error (msg not send)
     bool
-    send_msg(const Msg & msg, int SendFlags = SendBlocking);
+    sendMsg(const Msg & msg, int SendFlags = SendBlocking);
 
     bool
-    has_msg(void) const
+    hasMsg() const
     {
-        return eof || instate == HAS_MSG;
+        return eof_ || instate == HAS_MSG;
     }
 
     // Returns ture if there were no errors filling inbuf.
     bool
-    read_a_bit(void);
+    readSome();
 
     bool
-    at_eof(void) const
+    eof() const
     {
-        return instate != HAS_MSG && eof;
+        return instate != HAS_MSG && eof_;
     }
 
     void
@@ -1211,13 +1215,13 @@ public:
                     size_t                _in_len,
                     size_t &              _out_len);
     void
-    write_environments(const Environments & envs);
+    writeEnvironments(const Environments & envs);
     void
-    read_environments(Environments & envs);
+    readEnvironments(Environments & envs);
     void
-    read_line(std::string & line);
+    readLine(std::string & line);
     void
-    write_line(const std::string & line);
+    writeLine(const std::string & line);
 
     bool
     eq_ip(const MsgChannel & s) const;
@@ -1250,23 +1254,23 @@ protected:
     MsgChannel(int _fd, struct sockaddr *, socklen_t);
 
     bool
-    wait_for_protocol();
+    waitProtocol();
     // returns false if there was an error sending something
     bool
-    flush_writebuf(bool blocking);
+    flushWritebuf(bool blocking);
     void
-    writefull(const void * _buf, size_t count);
+    writeFull(const void * _buf, size_t count);
     // returns false if there was an error in the protocol setup
     bool
-    update_state(void);
+    updateState(void);
     void
-    chop_input(void);
+    chopInput(void);
     void
-    chop_output(void);
+    chopOutput(void);
     bool
-    wait_for_msg(int timeout);
+    waitMsg(int timeout);
     void
-    set_error(bool silent = false);
+    setError(bool silent = false);
 
     char * msgbuf;
     size_t msgbuflen;
@@ -1287,7 +1291,6 @@ protected:
     } instate;
 
     uint32_t inmsglen;
-    bool     eof;
 
 private:
     friend class Service;
@@ -1296,6 +1299,7 @@ private:
     struct sockaddr * addr;
     socklen_t         addr_len;
     bool              set_error_recursion;
+    bool              eof_;
 };
 
 #endif // _COMM_HH_

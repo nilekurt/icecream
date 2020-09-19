@@ -197,7 +197,7 @@ void
 error_client(MsgChannel * client, std::string error)
 {
     if (IS_PROTOCOL_23(client)) {
-        client->send_msg(StatusTextMsg(error));
+        client->sendMsg(StatusTextMsg(error));
     }
 }
 
@@ -462,7 +462,7 @@ start_install_environment(const std::string & basename,
     }
 
     std::string dirname = basename + "/target=" + target;
-    Msg         msg = c->get_msg(30);
+    Msg         msg = c->getMsg(30);
 
     auto * fcmsg = ext::get_if<FileChunkMsg>(&msg);
     if (fcmsg == nullptr) {

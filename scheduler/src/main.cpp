@@ -247,7 +247,7 @@ notify_monitors(const Msg & m)
 {
     for (auto it = monitors.begin(); it != monitors.end(); ++it) {
         /* If we can't send it, don't be clever, simply close this monitor.  */
-        if (!(*it)->send_msg(
+        if (!(*it)->sendMsg(
                 m,
                 MsgChannel::SendNonBlocking /*| MsgChannel::SendBulkOnly*/)) {
             trace() << "monitor is blocking... removing" << std::endl;
@@ -895,7 +895,7 @@ prune_servers()
                 (*it)->setMaxJobs((*it)->maxJobs() *
                                   -1); // better not give it away
 
-                if ((*it)->send_msg(PingMsg())) {
+                if ((*it)->sendMsg(PingMsg())) {
                     // give it MAX_SCHEDULER_PONG to answer a ping
                     (*it)->last_talk = time(nullptr) - MAX_SCHEDULER_PING +
                                        2 * MAX_SCHEDULER_PONG;
@@ -1029,7 +1029,7 @@ empty_queue()
     }
     if (IS_PROTOCOL_37(job->submitter()) && use_cs == job->submitter()) {
         NoCSMsg m2(job->id(), job->localClientId());
-        if (!job->submitter()->send_msg(m2)) {
+        if (!job->submitter()->sendMsg(m2)) {
             trace() << "failed to deliver job " << job->id() << std::endl;
             handle_end(job->submitter()); // will care for the rest
             return true;
@@ -1042,7 +1042,7 @@ empty_queue()
                     gotit,
                     job->localClientId(),
                     matched_job_id);
-        if (!job->submitter()->send_msg(m2)) {
+        if (!job->submitter()->sendMsg(m2)) {
             trace() << "failed to deliver job " << job->id() << std::endl;
             handle_end(job->submitter()); // will care for the rest
             return true;
@@ -1137,7 +1137,7 @@ handle_login(CompileServer * cs, const LoginMsg & msg)
 
     /* Configure the daemon */
     if (IS_PROTOCOL_24(cs)) {
-        cs->send_msg(ConfCSMsg());
+        cs->sendMsg(ConfCSMsg());
     }
 
     return true;
@@ -1160,7 +1160,7 @@ handle_relogin(CompileServer * cs, const LoginMsg & msg)
 
     /* Configure the daemon */
     if (IS_PROTOCOL_24(cs)) {
-        cs->send_msg(ConfCSMsg());
+        cs->sendMsg(ConfCSMsg());
     }
 }
 
@@ -1217,7 +1217,7 @@ handle_job_done(CompileServer * cs, JobDoneMsg & msg)
 {
     Job * j = nullptr;
 
-    if (uint32_t clientId = msg.unknown_job_client_id()) {
+    if (uint32_t clientId = msg.unknownJobClientId()) {
         // The daemon has sent a done message for a job for which it doesn't
         // know the job id (happens if the job is cancelled before we send back
         // the job id). Find the job using the client id.
@@ -1233,7 +1233,7 @@ handle_job_done(CompileServer * cs, JobDoneMsg & msg)
                 job->localClientId() == clientId) {
                 trace() << "STOP (WAITFORCS) FOR " << id << std::endl;
                 j = job;
-                msg.set_job_id(j->id()); // Now we know the job's id.
+                msg.setJobId(j->id()); // Now we know the job's id.
 
                 /* Unfortunately the job_requests queues are also tagged based
                 on the daemon, so we need to clean them up also.  */
@@ -1268,7 +1268,7 @@ handle_job_done(CompileServer * cs, JobDoneMsg & msg)
         return false;
     }
 
-    if (msg.is_from_server() && (j->server() != cs)) {
+    if (msg.isFromServer() && (j->server() != cs)) {
         log_info() << "the server isn't the same for job " << msg.job_id
                    << std::endl;
         log_info() << "server: " << j->server()->nodeName() << std::endl;
@@ -1278,7 +1278,7 @@ handle_job_done(CompileServer * cs, JobDoneMsg & msg)
         return false;
     }
 
-    if (!msg.is_from_server() && (j->submitter() != cs)) {
+    if (!msg.isFromServer() && (j->submitter() != cs)) {
         log_info() << "the submitter isn't the same for job " << msg.job_id
                    << std::endl;
         log_info() << "submitter: " << j->submitter()->nodeName() << std::endl;
@@ -1505,7 +1505,7 @@ handle_end(CompileServer * toremove)
 bool
 handle_activity(CompileServer * cs)
 {
-    auto msg = cs->get_msg(0, true);
+    auto msg = cs->getMsg(0, true);
 
     if (ext::holds_alternative<ext::monostate>(msg)) {
         handle_end(cs);
@@ -1991,7 +1991,7 @@ main(int argc, char * argv[])
 
             /* handle_activity() can delete c and make the iterator
                invalid.  */
-            while (ok && cs->has_msg()) {
+            while (ok && cs->hasMsg()) {
                 if (!handle_activity(cs)) {
                     ok = false;
                 }
@@ -2063,7 +2063,7 @@ main(int argc, char * argv[])
 
                     fd2cs[cs->fd] = cs;
 
-                    while (!cs->read_a_bit() || cs->has_msg()) {
+                    while (!cs->readSome() || cs->hasMsg()) {
                         if (!handle_activity(cs)) {
                             break;
                         }
@@ -2138,7 +2138,7 @@ main(int argc, char * argv[])
             ++it;
 
             if (pollfd_is_set(pollfds, i, POLLIN)) {
-                while (!cs->read_a_bit() || cs->has_msg()) {
+                while (!cs->readSome() || cs->hasMsg()) {
                     if (!handle_activity(cs)) {
                         break;
                     }

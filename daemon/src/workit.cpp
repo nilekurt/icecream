@@ -74,7 +74,7 @@ void
 error_client(MsgChannel * client, std::string error)
 {
     if (IS_PROTOCOL_23(client)) {
-        client->send_msg(StatusTextMsg(error));
+        client->sendMsg(StatusTextMsg(error));
     }
 }
 
@@ -440,7 +440,7 @@ work_it(CompileJob &        j,
     bool input_complete = false;
     for (;;) {
         if (client_fd >= 0 && !maybe_fcmsg.has_value()) {
-            auto msg = client->get_msg(0, true);
+            auto msg = client->getMsg(0, true);
 
             if (!ext::holds_alternative<ext::monostate>(msg)) {
                 if (input_complete) {
@@ -484,7 +484,7 @@ work_it(CompileJob &        j,
                             }),
                         std::move(msg));
                 }
-            } else if (client->at_eof()) {
+            } else if (client->eof()) {
                 log_warning()
                     << "unexpected EOF while reading preprocessed file"
                     << std::endl;

@@ -31,31 +31,29 @@ extern "C" {
 #include <sys/wait.h>
 }
 
-using namespace std;
-
 /**
  * Return a pointer to the basename of the file (everything after the
  * last slash.)  If there is no slash, return the whole filename,
  * which is presumably in the current directory.
  **/
-string
-find_basename(const string & sfile)
+std::string
+find_basename(const std::string & sfile)
 {
     size_t index = sfile.rfind('/');
 
-    if (index == string::npos) {
+    if (index == std::string::npos) {
         return sfile;
     }
 
     return sfile.substr(index + 1);
 }
 
-string
-find_prefix(const string & basename)
+std::string
+find_prefix(const std::string & basename)
 {
     size_t index = basename.rfind('-');
 
-    if (index == string::npos) {
+    if (index == std::string::npos) {
         return "";
     }
 
@@ -75,82 +73,84 @@ find_prefix(const string & basename)
 */
 
 bool
-is_c_compiler(const string & compiler)
+is_c_compiler(const std::string & compiler)
 {
-    string name = find_basename(compiler);
-    if (name.find("++") != string::npos)
+    std::string name = find_basename(compiler);
+    if (name.find("++") != std::string::npos)
         return false;
-    return name.find("gcc") != string::npos ||
-           name.find("clang") != string::npos || name == "cc";
+    return name.find("gcc") != std::string::npos ||
+           name.find("clang") != std::string::npos || name == "cc";
 }
 
 bool
-is_cpp_compiler(const string & compiler)
+is_cpp_compiler(const std::string & compiler)
 {
-    string name = find_basename(compiler);
-    return name.find("g++") != string::npos ||
-           name.find("clang++") != string::npos || name == "c++";
+    std::string name = find_basename(compiler);
+    return name.find("g++") != std::string::npos ||
+           name.find("clang++") != std::string::npos || name == "c++";
 }
 
-string
-get_c_compiler(const string & compiler)
+std::string
+get_c_compiler(const std::string & compiler)
 {
     if (compiler.empty())
         return compiler;
     size_t slash = compiler.rfind('/');
     size_t pos = compiler.rfind("++");
-    if (pos == string::npos || pos < slash)
+    if (pos == std::string::npos || pos < slash)
         return compiler;
     pos = compiler.rfind("clang++");
-    if (pos != string::npos && pos >= slash + 1)
+    if (pos != std::string::npos && pos >= slash + 1)
         return compiler.substr(0, pos) + "clang" +
                compiler.substr(pos + strlen("clang++"));
-    pos = compiler.rfind("g++"); // g++ must go after clang++, it's a substring
-    if (pos != string::npos && pos >= slash + 1)
+    pos = compiler.rfind(
+        "g++"); // g++ must go after clang++, it's a substd::string
+    if (pos != std::string::npos && pos >= slash + 1)
         return compiler.substr(0, pos) + "gcc" +
                compiler.substr(pos + strlen("g++"));
     pos = compiler.rfind("c++");
-    if (pos != string::npos && pos == slash + 1) // only exactly "c++"
+    if (pos != std::string::npos && pos == slash + 1) // only exactly "c++"
         return compiler.substr(0, pos) + "cc" +
                compiler.substr(pos + strlen("c++"));
     assert(false);
-    return string();
+    return std::string();
 }
 
-string
-get_cpp_compiler(const string & compiler)
+std::string
+get_cpp_compiler(const std::string & compiler)
 {
     if (compiler.empty())
         return compiler;
     size_t slash = compiler.rfind('/');
     size_t pos = compiler.rfind("++");
-    if (pos != string::npos && pos >= slash + 1)
+    if (pos != std::string::npos && pos >= slash + 1)
         return compiler;
     pos = compiler.rfind("gcc");
-    if (pos != string::npos && pos >= slash + 1)
+    if (pos != std::string::npos && pos >= slash + 1)
         return compiler.substr(0, pos) + "g++" +
                compiler.substr(pos + strlen("gcc"));
     pos = compiler.rfind("clang");
-    if (pos != string::npos && pos >= slash + 1)
+    if (pos != std::string::npos && pos >= slash + 1)
         return compiler.substr(0, pos) + "clang++" +
                compiler.substr(pos + strlen("clang"));
     pos = compiler.rfind("cc");
-    if (pos != string::npos && pos == slash + 1) // only exactly "cc"
+    if (pos != std::string::npos && pos == slash + 1) // only exactly "cc"
         return compiler.substr(0, pos) + "c++" +
                compiler.substr(pos + strlen("cc"));
     assert(false);
-    return string();
+    return std::string();
 }
 
-string
-read_command_output(const string &         command,
-                    const vector<string> & args,
-                    int                    output_fd)
+std::string
+read_command_output(const std::string &              command,
+                    const std::vector<std::string> & args,
+                    int                              output_fd)
 {
     flush_debug();
     int pipes[2];
     if (pipe(pipes) == -1) {
-        log_error() << "failed to create pipe: " << strerror(errno) << endl;
+        log_error() << "failed to create pipe: " << strerror(errno)
+                    << std::endl;
         _exit(147);
     }
     pid_t pid = fork();
@@ -168,9 +168,9 @@ read_command_output(const string &         command,
         while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
             ;
         if (shell_exit_status(status) != 0)
-            return string();
-        string output;
-        char   buf[1024];
+            return std::string();
+        std::string output;
+        char        buf[1024];
         for (;;) {
             int r = read(pipes[0], buf, sizeof(buf) - 1);
             if (r > 0) {
@@ -197,7 +197,7 @@ read_command_output(const string &         command,
 
     if (dup2(pipes[1], output_fd) < 0) {
         log_perror("dup2 failed");
-        return string();
+        return std::string();
     }
 
     if (close(pipes[1]) < 0) {
@@ -208,23 +208,23 @@ read_command_output(const string &         command,
     argv = new const char *[args.size() + 2];
     int pos = 0;
     argv[pos++] = strdup(command.c_str());
-    for (const string & arg : args)
+    for (const std::string & arg : args)
         argv[pos++] = strdup(arg.c_str());
     argv[pos++] = nullptr;
 
     execvp(argv[0], const_cast<char * const *>(argv));
-    ostringstream errmsg;
+    std::ostringstream errmsg;
     errmsg << "execv " << argv[0] << " failed";
     log_perror(errmsg.str());
     _exit(-1);
 }
 
-string
-read_command_line(const string &         command,
-                  const vector<string> & args,
-                  int                    output_fd)
+std::string
+read_command_line(const std::string &              command,
+                  const std::vector<std::string> & args,
+                  int                              output_fd)
 {
-    string output = read_command_output(command, args, output_fd);
+    std::string output = read_command_output(command, args, output_fd);
     // get rid of the endline
     if (output[output.length() - 1] == '\n')
         return output.substr(0, output.length() - 1);
@@ -233,10 +233,10 @@ read_command_line(const string &         command,
 }
 
 bool
-pollfd_is_set(const vector<pollfd> & pollfds,
-              int                    fd,
-              int                    flags,
-              bool                   check_errors)
+pollfd_is_set(const std::vector<pollfd> & pollfds,
+              int                         fd,
+              int                         flags,
+              bool                        check_errors)
 {
     for (auto pollfd : pollfds) {
         if (pollfd.fd == fd) {
@@ -253,10 +253,10 @@ pollfd_is_set(const vector<pollfd> & pollfds,
     return false;
 }
 
-string
+std::string
 supported_features_to_string(unsigned int features)
 {
-    string ret;
+    std::string ret;
     if (features & NODE_FEATURE_ENV_XZ)
         ret += " env_xz";
     if (features & NODE_FEATURE_ENV_ZSTD)

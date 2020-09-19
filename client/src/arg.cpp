@@ -121,7 +121,7 @@ is_argument_with_space(const char * argument)
     //         -segaddr <arg1> <arg2>
     //         -segcreate <arg1> <arg2> <arg3>
     //         -segprot <arg1> <arg2> <arg3>
-    //       Move some arguments to Arg_Cpp or Arg_Local
+    //       Move some arguments to arg_cpp or ArgumentType::LOCAL
     static const char * const arguments[] = {"-dyld-prefix",
                                              "-gcc-toolchain",
                                              "--param",
@@ -320,10 +320,11 @@ analyse_argv(const char * const *     argv,
     bool         seen_mcpu_native = false;
     bool         seen_mtune_native = false;
     const char * standard = nullptr;
+
+    using AT = ArgumentType;
     // if rewriting includes and precompiling on remote machine, then cpp args
     // are not local
-    Argument_Type Arg_Cpp = compiler_only_rewrite_includes(job) ? Arg_Rest
-                                                                : Arg_Local;
+    auto arg_cpp = compiler_only_rewrite_includes(job) ? AT::REST : AT::LOCAL;
 
     explicit_color_diagnostics = false;
     explicit_no_show_caret = false;
@@ -332,41 +333,41 @@ analyse_argv(const char * const *     argv,
         const char * a = argv[i];
 
         if (icerun) {
-            args.append(a, Arg_Local);
+            args.append(a, AT::LOCAL);
         } else if (a[0] == '-') {
             if (!strcmp(a, "-E")) {
                 always_local = true;
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
                 log_warning() << "preprocessing, building locally" << std::endl;
             } else if (!strncmp(a, "-fdump", 6) || !strcmp(a, "-combine") ||
                        !strcmp(a, "-fsyntax-only") ||
                        !strncmp(a, "-ftime-report", strlen("-ftime-report")) ||
                        !strcmp(a, "-ftime-trace")) {
                 always_local = true;
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
                 log_warning()
                     << "argument " << a << ", building locally" << std::endl;
             } else if (!strcmp(a, "-MD") || !strcmp(a, "-MMD") ||
                        str_startswith("-Wp,-MD", a) ||
                        str_startswith("-Wp,-MMD", a)) {
                 seen_md = true;
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
                 /* These two generate dependencies as a side effect.  They
                  * should work with the way we call cpp. */
             } else if (!strcmp(a, "-MG") || !strcmp(a, "-MP")) {
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
                 /* These just modify the behaviour of other -M* options and do
                  * nothing by themselves. */
             } else if (!strcmp(a, "-MF") || str_startswith("-Wp,-MF", a)) {
                 seen_mf = true;
-                args.append(a, Arg_Local);
-                args.append(argv[++i], Arg_Local);
+                args.append(a, AT::LOCAL);
+                args.append(argv[++i], AT::LOCAL);
                 /* as above but with extra argument */
             } else if (!strcmp(a, "-MT") || !strcmp(a, "-MQ") ||
                        str_startswith("-Wp,-MT", a) ||
                        str_startswith("-Wp,-MQ", a)) {
-                args.append(a, Arg_Local);
-                args.append(argv[++i], Arg_Local);
+                args.append(a, AT::LOCAL);
+                args.append(argv[++i], AT::LOCAL);
                 /* as above but with extra argument */
             } else if (a[1] == 'M') {
                 /* -M(anything else) causes the preprocessor to
@@ -376,23 +377,23 @@ analyse_argv(const char * const *     argv,
                    not the compiler.  There would be no point trying
                    to distribute it even if we could. */
                 always_local = true;
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
                 log_warning()
                     << "argument " << a << ", building locally" << std::endl;
             } else if (str_equal("--param", a)) {
-                args.append(a, Arg_Remote);
+                args.append(a, AT::REMOTE);
 
                 assert(is_argument_with_space(a));
                 /* skip next word, being option argument */
                 if (argv[i + 1]) {
-                    args.append(argv[++i], Arg_Remote);
+                    args.append(argv[++i], AT::REMOTE);
                 }
             } else if (a[1] == 'B') {
                 /* -B overwrites the path where the compiler finds the
                    assembler. As we don't use that, better force local job.
                 */
                 always_local = true;
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
                 log_warning()
                     << "argument " << a << ", building locally" << std::endl;
 
@@ -400,7 +401,7 @@ analyse_argv(const char * const *     argv,
                     assert(is_argument_with_space(a));
                     /* skip next word, being option argument */
                     if (argv[i + 1]) {
-                        args.append(argv[++i], Arg_Local);
+                        args.append(argv[++i], AT::LOCAL);
                     }
                 }
             } else if (str_startswith("-Wa,", a)) {
@@ -433,11 +434,11 @@ analyse_argv(const char * const *     argv,
 
                 if (local) {
                     always_local = true;
-                    args.append(a, Arg_Local);
+                    args.append(a, AT::LOCAL);
                     log_warning() << "argument " << a << ", building locally"
                                   << std::endl;
                 } else {
-                    args.append(remote_arg, Arg_Remote);
+                    args.append(remote_arg, AT::REMOTE);
                 }
             } else if (!strcmp(a, "-S")) {
                 seen_s = true;
@@ -455,17 +456,17 @@ analyse_argv(const char * const *     argv,
                     << "compiler will emit additional local files (argument "
                     << a << "); building locally" << std::endl;
                 always_local = true;
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
             } else if (!strcmp(a, "-gsplit-dwarf")) {
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
                 seen_split_dwarf = true;
             } else if (str_equal(a, "-x")) {
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
                 bool        unsupported = true;
                 std::string unsupported_opt = "??";
                 if (const char * opt = argv[i + 1]) {
                     ++i;
-                    args.append(opt, Arg_Rest);
+                    args.append(opt, AT::REST);
                     unsupported_opt = opt;
                     if (str_equal(opt, "c++") || str_equal(opt, "c") ||
                         str_equal(opt, "objective-c") ||
@@ -495,13 +496,13 @@ analyse_argv(const char * const *     argv,
                     always_local = true;
                 }
             } else if (!strcmp(a, "-march=native")) {
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
                 seen_march_native = true;
             } else if (!strcmp(a, "-mcpu=native")) {
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
                 seen_mcpu_native = true;
             } else if (!strcmp(a, "-mtune=native")) {
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
                 seen_mtune_native = true;
             } else if (!strcmp(a, "-fexec-charset") ||
                        !strcmp(a, "-fwide-exec-charset") ||
@@ -510,7 +511,7 @@ analyse_argv(const char * const *     argv,
                                  "the build environment; must be local"
                               << std::endl;
                 always_local = true;
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
             } else if (!strcmp(a, "-c")) {
                 seen_c = true;
             } else if (str_startswith("-o", a)) {
@@ -534,13 +535,13 @@ analyse_argv(const char * const *     argv,
                     always_local = true;
                 }
             } else if (str_equal("-D", a) || str_equal("-U", a)) {
-                args.append(a, Arg_Cpp);
+                args.append(a, arg_cpp);
 
                 assert(is_argument_with_space(a));
                 /* skip next word, being option argument */
                 if (argv[i + 1]) {
                     ++i;
-                    args.append(argv[i], Arg_Cpp);
+                    args.append(argv[i], arg_cpp);
                 }
             } else if (str_equal("-I", a) || str_equal("-i", a) ||
                        str_equal("--include-directory", a) ||
@@ -567,7 +568,7 @@ analyse_argv(const char * const *     argv,
                        str_equal("-iwithprefixbefore", a) ||
                        str_equal("--include-with-prefix-before", a) ||
                        str_equal("-iwithsysroot", a)) {
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
 
                 assert(is_argument_with_space(a));
                 /* skip next word, being option argument */
@@ -580,53 +581,53 @@ analyse_argv(const char * const *     argv,
                                       << ", building locally" << std::endl;
                     }
 
-                    args.append(argv[i], Arg_Local);
+                    args.append(argv[i], AT::LOCAL);
                 }
             } else if (str_equal("-fmodules", a) ||
                        str_equal("-fcxx-modules", a) ||
                        str_equal("-fmodules-ts", a) ||
                        str_startswith("-fmodules-cache-path=", a)) {
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
             } else if (str_startswith("-Wp,", a) || str_startswith("-D", a) ||
                        str_startswith("-U", a)) {
-                args.append(a, Arg_Cpp);
+                args.append(a, arg_cpp);
             } else if (str_startswith("-I", a) || str_startswith("-l", a) ||
                        str_startswith("-L", a)) {
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
             } else if (str_equal("-undef", a)) {
-                args.append(a, Arg_Cpp);
+                args.append(a, arg_cpp);
             } else if (str_equal("-nostdinc", a) ||
                        str_equal("-nostdinc++", a) || str_equal("-MD", a) ||
                        str_equal("-MMD", a) || str_equal("-MG", a) ||
                        str_equal("-MP", a)) {
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
             } else if (str_equal("-Wmissing-include-dirs", a) ||
                        str_equal("-Werror=missing-include-dirs", a)) {
-                args.append(a, Arg_Local);
+                args.append(a, AT::LOCAL);
             } else if (str_equal("-fno-color-diagnostics", a)) {
                 explicit_color_diagnostics = true;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_equal("-fcolor-diagnostics", a)) {
                 explicit_color_diagnostics = true;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_equal("-fno-diagnostics-color", a) ||
                        str_equal("-fdiagnostics-color=never", a)) {
                 explicit_color_diagnostics = true;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_equal("-fdiagnostics-color", a) ||
                        str_equal("-fdiagnostics-color=always", a)) {
                 explicit_color_diagnostics = true;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_equal("-fdiagnostics-color=auto", a)) {
                 // Drop the option here and pretend it wasn't given,
                 // the code below will decide whether to enable colors or not.
                 explicit_color_diagnostics = false;
             } else if (str_equal("-fno-diagnostics-show-caret", a)) {
                 explicit_no_show_caret = true;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_equal("-fdiagnostics-show-caret", a)) {
                 explicit_no_show_caret = false;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_startswith("-fplugin=", a) ||
                        str_startswith("-fsanitize-blacklist=", a) ||
                        str_startswith("-fprofile-sample-use=", a)) {
@@ -653,7 +654,7 @@ analyse_argv(const char * const *     argv,
                                   << " missing, building locally" << std::endl;
                 }
 
-                args.append(prefix + file, Arg_Rest);
+                args.append(prefix + file, AT::REST);
             } else if (str_equal("-Xclang", a)) {
                 if (argv[i + 1]) {
                     ++i;
@@ -662,8 +663,8 @@ analyse_argv(const char * const *     argv,
                     if (str_equal("-load", p)) {
                         if (argv[i + 1] && argv[i + 2] &&
                             str_equal(argv[i + 1], "-Xclang")) {
-                            args.append(a, Arg_Rest);
-                            args.append(p, Arg_Rest);
+                            args.append(a, AT::REST);
+                            args.append(p, AT::REST);
                             std::string file = argv[i + 2];
 
                             if (access(file.c_str(), R_OK) == 0) {
@@ -678,8 +679,8 @@ analyse_argv(const char * const *     argv,
                                     << std::endl;
                             }
 
-                            args.append(argv[i + 1], Arg_Rest);
-                            args.append(file, Arg_Rest);
+                            args.append(argv[i + 1], AT::REST);
+                            args.append(file, AT::REST);
                             i += 2;
                         }
                     } else if (str_equal("-building-pch-with-obj", p)) {
@@ -691,34 +692,34 @@ analyse_argv(const char * const *     argv,
                         log_info() << "argument " << a << " " << p
                                    << ", building locally" << std::endl;
                         always_local = true;
-                        args.append(a, Arg_Rest);
-                        args.append(p, Arg_Rest);
+                        args.append(a, AT::REST);
+                        args.append(p, AT::REST);
                     } else {
-                        args.append(a, Arg_Rest);
-                        args.append(p, Arg_Rest);
+                        args.append(a, AT::REST);
+                        args.append(p, AT::REST);
                     }
                 }
             } else if (str_equal("-target", a)) {
                 seen_target = true;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
                 if (argv[i + 1]) {
-                    args.append(argv[++i], Arg_Rest);
+                    args.append(argv[++i], AT::REST);
                 }
             } else if (str_startswith("--target=", a)) {
                 seen_target = true;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_equal("-Wunused-macros", a) ||
                        str_equal("-Werror=unused-macros", a)) {
                 wunused_macros = true;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_equal("-Wno-unused-macros", a)) {
                 wunused_macros = false;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_equal("-pedantic", a) ||
                        str_equal("-Wpedantic", a) ||
                        str_equal("-pedantic-errors", a)) {
                 seen_pedantic = true;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
             } else if (str_equal("-arch", a)) {
                 if (seen_arch) {
                     log_warning() << "multiple -arch options, building locally"
@@ -726,23 +727,23 @@ analyse_argv(const char * const *     argv,
                     always_local = true;
                 }
                 seen_arch = false;
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
                 if (argv[i + 1]) {
-                    args.append(argv[++i], Arg_Rest);
+                    args.append(argv[++i], AT::REST);
                 }
             } else {
-                args.append(a, Arg_Rest);
+                args.append(a, AT::REST);
 
                 if (is_argument_with_space(a)) {
                     if (argv[i + 1]) {
-                        args.append(argv[++i], Arg_Rest);
+                        args.append(argv[++i], AT::REST);
                     }
                 }
             }
         } else if (a[0] == '@') {
-            args.append(a, Arg_Local);
+            args.append(a, AT::LOCAL);
         } else {
-            args.append(a, Arg_Rest);
+            args.append(a, AT::REST);
         }
     }
 
@@ -757,10 +758,10 @@ analyse_argv(const char * const *     argv,
             log_info() << "can't have both -c and -S, ignoring -c" << std::endl;
         }
 
-        args.append("-S", Arg_Remote);
+        args.append("-S", AT::REMOTE);
     } else {
         assert(seen_c);
-        args.append("-c", Arg_Remote);
+        args.append("-c", AT::REMOTE);
         if (seen_split_dwarf) {
             job.setDwarfFissionEnabled(true);
         }
@@ -788,7 +789,7 @@ analyse_argv(const char * const *     argv,
                 is_argument_with_space(it->first.c_str())) {
                 ++it;
                 ++it;
-            } else if (it->second != Arg_Rest || it->first.at(0) == '-' ||
+            } else if (it->second != AT::REST || it->first.at(0) == '-' ||
                        it->first.at(0) == '@') {
                 ++it;
             } else if (ifile.empty()) {
@@ -864,8 +865,8 @@ analyse_argv(const char * const *     argv,
                 log_info() << "dep file: " << dfile << std::endl;
 #endif
 
-                args.append("-MF", Arg_Local);
-                args.append(dfile, Arg_Local);
+                args.append("-MF", AT::LOCAL);
+                args.append(dfile, AT::LOCAL);
             }
         }
     } else { // always_local
@@ -889,9 +890,9 @@ analyse_argv(const char * const *     argv,
     if (!icerun && compiler_has_color_output(job) &&
         !explicit_color_diagnostics) {
         if (compiler_is_clang(job))
-            args.append("-fcolor-diagnostics", Arg_Rest);
+            args.append("-fcolor-diagnostics", AT::REST);
         else
-            args.append("-fdiagnostics-color", Arg_Rest); // GCC
+            args.append("-fdiagnostics-color", AT::REST); // GCC
     }
 
     // -Wunused-macros is tricky with remote preprocessing. GCC's
@@ -919,7 +920,7 @@ analyse_argv(const char * const *     argv,
         !compiler_is_clang(job)) {
         // Inject this, so that remote compilation uses -fpreprocessed
         // -fdirectives-only
-        args.append("-fdirectives-only", Arg_Remote);
+        args.append("-fdirectives-only", AT::REMOTE);
     }
 
     if (!always_local && !seen_target && compiler_is_clang(job)) {
@@ -931,8 +932,8 @@ analyse_argv(const char * const *     argv,
         // platform. Therefore explicitly ask for our platform.
         std::string default_target = clang_get_default_target(job);
         if (!default_target.empty()) {
-            args.append("-target", Arg_Remote);
-            args.append(default_target, Arg_Remote);
+            args.append("-target", AT::REMOTE);
+            args.append(default_target, AT::REMOTE);
         } else {
             always_local = true;
             log_error() << "failed to read default clang host platform, "
@@ -960,7 +961,7 @@ analyse_argv(const char * const *     argv,
                     it = args.erase(it);
                     if (!handled) {
                         for (const std::string & arg : arch_args) {
-                            it = args.insert(it, std::make_pair(arg, Arg_Rest));
+                            it = args.insert(it, std::make_pair(arg, AT::REST));
                             ++it;
                         }
                         handled = true;

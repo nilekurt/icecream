@@ -64,7 +64,7 @@ void
 error_client(MsgChannel * client, std::string error)
 {
     if (IS_PROTOCOL_22(client)) {
-        client->send_msg(StatusTextMsg(error));
+        client->sendMsg(StatusTextMsg(error));
     }
 }
 
@@ -95,14 +95,14 @@ write_output_file(const std::string & file, MsgChannel * client)
             }
 
             if (!bytes) {
-                if (!client->send_msg(EndMsg())) {
+                if (!client->sendMsg(EndMsg())) {
                     log_info() << "write of obj end failed " << std::endl;
                     throw DaemonException(EXIT_DISTCC_FAILED);
                 }
                 break;
             }
 
-            if (!client->send_msg(FileChunkMsg(buffer, bytes))) {
+            if (!client->sendMsg(FileChunkMsg(buffer, bytes))) {
                 log_info() << "write of obj chunk failed " << bytes
                            << std::endl;
                 throw DaemonException(EXIT_DISTCC_FAILED);
@@ -327,7 +327,7 @@ handle_connection(const std::string & basedir,
         } else
             rmsg.have_dwo_file = false;
 
-        if (!client->send_msg(rmsg)) {
+        if (!client->sendMsg(rmsg)) {
             log_info() << "write of result failed" << std::endl;
             throw DaemonException(EXIT_DISTCC_FAILED);
         }
