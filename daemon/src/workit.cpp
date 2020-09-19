@@ -31,7 +31,7 @@
 #include "pipes.h"
 #include "platform.hh"
 #include "services_util.hh"
-#include "tempfile.h"
+#include "tempfile.hh"
 
 extern "C" {
 #ifdef __FreeBSD__

@@ -29,17 +29,20 @@
 
 //#include "config.h"
 
-#include "tempfile.h"
+#include "tempfile.hh"
 
 #include "exitcode.h"
 
-#include <errno.h>
+extern "C" {
 #include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
+}
+
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #ifndef _PATH_TMP
 #define _PATH_TMP "/tmp"
@@ -53,23 +56,17 @@
  * that it exists with appropriately tight permissions.
  **/
 int
-dcc_make_tmpnam(const char * prefix,
-                const char * suffix,
-                char **      name_ret,
-                int          relative)
+dcc_make_tmpnam(const char *  prefix,
+                const char *  suffix,
+                std::string & name_ret,
+                int           relative)
 {
     unsigned long random_bits;
     unsigned long tries = 0;
-    size_t        tmpname_length;
-    char *        tmpname;
 
-    tmpname_length =
+    std::size_t tmpname_length =
         strlen(_PATH_TMP) + 1 + strlen(prefix) + 1 + 8 + strlen(suffix) + 1;
-    tmpname = malloc(tmpname_length);
-
-    if (!tmpname) {
-        return EXIT_OUT_OF_MEMORY;
-    }
+    std::string tmpname(tmpname_length, '\0');
 
     random_bits = (unsigned long)getpid() << 16;
 
@@ -85,14 +82,13 @@ dcc_make_tmpnam(const char * prefix,
 #endif
 
     do {
-        if (snprintf(tmpname,
+        if (snprintf(&tmpname[0],
                      tmpname_length,
                      "%s/%s_%08lx%s",
                      (relative ? &_PATH_TMP[1] : _PATH_TMP),
                      prefix,
                      random_bits & 0xffffffffUL,
                      suffix) == -1) {
-            free(tmpname);
             return EXIT_OUT_OF_MEMORY;
         }
 
@@ -101,13 +97,12 @@ dcc_make_tmpnam(const char * prefix,
          *
          * The permissions are tight because nobody but this process
          * and our children should do anything with it. */
-        int fd = open(tmpname, O_WRONLY | O_CREAT | O_EXCL, 0600);
+        int fd = open(tmpname.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
 
         if (fd == -1) {
             /* Don't try getting a file too often.  Safety net against
                endless loops. Probably just paranoia.  */
             if (++tries > 1000000) {
-                free(tmpname);
                 return EXIT_IO_ERROR;
             }
 
@@ -125,44 +120,37 @@ dcc_make_tmpnam(const char * prefix,
                     continue;
             }
 
-            free(tmpname);
             return EXIT_IO_ERROR;
         }
 
         if (close(fd) == -1) { /* huh? */
-            free(tmpname);
             return EXIT_IO_ERROR;
         }
 
         break;
     } while (1);
 
-    *name_ret = tmpname;
+    name_ret = std::move(tmpname);
 
     return 0;
 }
 
 int
-dcc_make_tmpdir(char ** name_ret)
+dcc_make_tmpdir(std::string & name_ret)
 {
     unsigned long tries = 0;
-    char template[] = "icecc-XXXXXX";
-    size_t tmpname_length = strlen(_PATH_TMP) + 1 + strlen(template) + 1;
-    char * tmpname = malloc(tmpname_length);
+    char          pattern[] = "icecc-XXXXXX";
+    std::size_t   tmpname_length = strlen(_PATH_TMP) + 1 + strlen(pattern) + 1;
+    std::string   tmpname(tmpname_length, '\0');
 
-    if (!tmpname) {
-        return EXIT_OUT_OF_MEMORY;
-    }
-
-    if (snprintf(tmpname, tmpname_length, "%s/%s", _PATH_TMP, template) == -1) {
-        free(tmpname);
+    if (snprintf(&tmpname[0], tmpname_length, "%s/%s", _PATH_TMP, pattern) ==
+        -1) {
         return EXIT_OUT_OF_MEMORY;
     }
 
     do {
-        if (!mkdtemp(tmpname)) {
+        if (!mkdtemp(&tmpname[0])) {
             if (++tries > 1000000) {
-                free(tmpname);
                 return EXIT_IO_ERROR;
             }
 
@@ -173,14 +161,13 @@ dcc_make_tmpdir(char ** name_ret)
                 case ELOOP: continue;
             }
 
-            free(tmpname);
             return EXIT_IO_ERROR;
         }
 
         break;
     } while (1);
 
-    *name_ret = tmpname;
+    name_ret = std::move(tmpname);
 
     return 0;
 }
