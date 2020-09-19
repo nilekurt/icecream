@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.10)
 project(icecream VERSION 1.4.90 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 
 option(ICECREAM_LTO "Build with link-time optimization" OFF)
 option(ICECREAM_PIE "Build position-independent executables" ON)
@@ -34,9 +34,11 @@ target_compile_definitions(copts_common INTERFACE
 target_link_libraries(copts_common INTERFACE
     $<$<BOOL:${ICECREAM_PIE}>:copts_pie>)
 
+add_subdirectory(3rdparty)
 add_subdirectory(client)
 add_subdirectory(compilerwrapper)
 add_subdirectory(create-env)
 add_subdirectory(daemon)
+add_subdirectory(extensions)
 add_subdirectory(scheduler)
 add_subdirectory(services)

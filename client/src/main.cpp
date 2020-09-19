@@ -508,7 +508,7 @@ main(int argc, char ** argv)
                           << std::endl;
             local = true;
         } else {
-            Msg *       umsg = nullptr;
+            Msg         umsg{};
             std::string compiler;
             if (IS_PROTOCOL_41(local_daemon))
                 compiler = get_absfilename(find_compiler(job));
@@ -530,10 +530,12 @@ main(int argc, char ** argv)
                 umsg = local_daemon->get_msg(4 * 60);
             }
 
-            std::string native;
-
-            if (umsg && umsg->type == M_NATIVE_ENV) {
-                native = static_cast<UseNativeEnvMsg *>(umsg)->nativeVersion;
+            std::string native{};
+            {
+                auto * native_msg = ext::get_if<UseNativeEnvMsg>(&umsg);
+                if (native_msg != nullptr) {
+                    native = std::move(native_msg->nativeVersion);
+                }
             }
 
             if (native.empty() || ::access(native.c_str(), R_OK) < 0) {
@@ -544,8 +546,6 @@ main(int argc, char ** argv)
                 envs.push_back(make_pair(job.targetPlatform(), native));
                 log_info() << "native " << native << std::endl;
             }
-
-            delete umsg;
         }
 
         // we set it to local so we tell the local daemon about it - avoiding
@@ -629,7 +629,7 @@ main(int argc, char ** argv)
     if (local) {
         LogBlock      b("building_local");
         struct rusage ru;
-        Msg *         startme = nullptr;
+        Msg           startme{};
 
         /* Inform the daemon that we like to start a job.  */
         if (local_daemon->send_msg(
@@ -641,14 +641,12 @@ main(int argc, char ** argv)
 
         /* If we can't talk to the daemon anymore we need to fall back
            to lock file locking.  */
-        if (!startme || startme->type != M_JOB_LOCAL_BEGIN) {
-            delete startme;
+        if (!ext::holds_alternative<JobLocalBeginMsg>(startme)) {
             delete local_daemon;
             return build_local(job, nullptr);
         }
 
         ret = build_local(job, local_daemon, &ru);
-        delete startme;
     }
 
     delete local_daemon;

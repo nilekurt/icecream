@@ -104,6 +104,24 @@ rip_out_paths(const Environments &                 envs,
     return env2;
 }
 
+UseCSMsg &
+get_use_cs(Msg & msg)
+{
+    auto * use_cs = ext::get_if<UseCSMsg>(&msg);
+    if (use_cs == nullptr) {
+        const auto * msg_type = message_type(msg);
+
+        log_warning() << "reply was not expected use_cs " << msg_type
+                      << std::endl;
+        std::ostringstream unexpected_msg;
+        unexpected_msg << "Error 1 - expected use_cs reply, but got "
+                       << msg_type << " instead";
+        throw ClientError(1, unexpected_msg.str());
+    }
+
+    return *use_cs;
+}
+
 int
 get_niceness()
 {
@@ -114,45 +132,27 @@ get_niceness()
     return niceness;
 }
 
-UseCSMsg *
-get_server(MsgChannel * local_daemon)
+int
+niceness_timeout()
 {
-    int timeout = 4 * 60;
-    if (get_niceness() >
-        0) // low priority jobs may take longer to get a slot assigned
-        timeout = 60 * 60;
-    Msg * umsg = local_daemon->get_msg(timeout);
-
-    if (!umsg || umsg->type != M_USE_CS) {
-        log_warning() << "reply was not expected use_cs "
-                      << (umsg ? (char)umsg->type : '0') << std::endl;
-        std::ostringstream unexpected_msg;
-        unexpected_msg << "Error 1 - expected use_cs reply, but got "
-                       << (umsg ? (char)umsg->type : '0') << " instead";
-        delete umsg;
-        throw ClientError(1, unexpected_msg.str());
-    }
-
-    UseCSMsg * usecs = dynamic_cast<UseCSMsg *>(umsg);
-    return usecs;
+    return (get_niceness() > 0) ? (60 * 60) : (4 * 60);
 }
 
 void
-check_for_failure(Msg * msg, MsgChannel * cserver)
+check_for_failure(const Msg & msg, MsgChannel * cserver)
 {
-    if (msg && msg->type == M_STATUS_TEXT) {
+    const auto * status = ext::get_if<StatusTextMsg>(&msg);
+    if (status != nullptr) {
         log_error() << "Remote status (compiled on " << cserver->name
-                    << "): " << static_cast<StatusTextMsg *>(msg)->text
-                    << std::endl;
+                    << "): " << status->text << std::endl;
         throw ClientError(23,
                           "Error 23 - Remote status (compiled on " +
-                              cserver->name + ")\n" +
-                              static_cast<StatusTextMsg *>(msg)->text);
+                              cserver->name + ")\n" + status->text);
     }
 }
 
-// 'unlock_sending' = dcc_lock_host() is held when this is called, temporarily
-// yield the lock while doing network transfers
+// 'unlock_sending' = dcc_lock_host() is held when this is called,
+// temporarily yield the lock while doing network transfers
 void
 write_fd_to_server(int fd, MsgChannel * cserver, bool unlock_sending = false)
 {
@@ -185,18 +185,20 @@ write_fd_to_server(int fd, MsgChannel * cserver, bool unlock_sending = false)
 
         if (!bytes || offset == sizeof(buffer)) {
             if (offset) {
-                // If write_fd_to_server() is called for sending preprocessed
-                // data, the dcc_lock_host() lock is held to limit the number
-                // cpp invocations to the cores available to prevent overload.
-                // But that would essentially also limit network transfers, so
-                // temporarily yield and reaquire again.
+                // If write_fd_to_server() is called for sending
+                // preprocessed data, the dcc_lock_host() lock is held to
+                // limit the number cpp invocations to the cores available
+                // to prevent overload. But that would essentially also
+                // limit network transfers, so temporarily yield and
+                // reaquire again.
                 if (unlock_sending)
                     dcc_unlock();
-                FileChunkMsg fcmsg(buffer, offset);
+                Msg msg{ext::in_place_type_t<FileChunkMsg>{}, buffer, offset};
 
-                if (!cserver->send_msg(fcmsg)) {
-                    Msg * m = cserver->get_msg(2);
-                    check_for_failure(m, cserver);
+                if (!cserver->send_msg(msg)) {
+                    constexpr int timeout{2};
+                    auto          msg = cserver->get_msg(timeout);
+                    check_for_failure(msg, cserver);
 
                     log_error() << "write of source chunk to host "
                                 << cserver->name.c_str() << std::endl;
@@ -204,9 +206,11 @@ write_fd_to_server(int fd, MsgChannel * cserver, bool unlock_sending = false)
                     close(fd);
                     throw ClientError(15, "Error 15 - write to host failed");
                 }
+                auto * fcmsg = ext::get_if<FileChunkMsg>(&msg);
+                assert(fcmsg != nullptr);
 
-                uncompressed += fcmsg.len;
-                compressed += fcmsg.compressed;
+                uncompressed += fcmsg->buffer.size();
+                compressed += fcmsg->compressed;
                 offset = 0;
                 if (unlock_sending) {
                     if (!dcc_lock_host()) {
@@ -247,40 +251,38 @@ receive_file(const std::string & output_file, MsgChannel * cserver)
         throw ClientError(31, "Error 31 - " + errmsg);
     }
 
-    Msg *  msg = nullptr;
     size_t uncompressed = 0;
     size_t compressed = 0;
 
     while (1) {
-        delete msg;
+        constexpr int timeout{40};
+        auto          msg = cserver->get_msg(timeout);
 
-        msg = cserver->get_msg(40);
-
-        if (!msg) { // the network went down?
+        if (ext::holds_alternative<ext::monostate>(
+                msg)) { // the network went down?
             unlink(tmp_file.c_str());
             throw ClientError(19, "Error 19 - (network failure?)");
         }
 
         check_for_failure(msg, cserver);
 
-        if (msg->type == M_END) {
+        if (ext::holds_alternative<EndMsg>(msg)) {
             break;
         }
 
-        if (msg->type != M_FILE_CHUNK) {
+        auto * fcmsg = ext::get_if<FileChunkMsg>(&msg);
+        if (fcmsg == nullptr) {
             unlink(tmp_file.c_str());
-            delete msg;
             throw ClientError(20, "Error 20 - unexpected message");
         }
 
-        FileChunkMsg * fcmsg = dynamic_cast<FileChunkMsg *>(msg);
         compressed += fcmsg->compressed;
-        uncompressed += fcmsg->len;
+        uncompressed += fcmsg->buffer.size();
 
-        if (write(obj_fd, fcmsg->buffer, fcmsg->len) != (ssize_t)fcmsg->len) {
+        const auto buf_size = static_cast<ssize_t>(fcmsg->buffer.size());
+        if (write(obj_fd, fcmsg->buffer.data(), buf_size) != buf_size) {
             log_perror("Error writing file: ");
             unlink(tmp_file.c_str());
-            delete msg;
             throw ClientError(21, "Error 21 - error writing file");
         }
     }
@@ -288,8 +290,6 @@ receive_file(const std::string & output_file, MsgChannel * cserver)
     if (uncompressed)
         trace() << "got " << compressed << " bytes ("
                 << (compressed * 100 / uncompressed) << "%)" << std::endl;
-
-    delete msg;
 
     if (close(obj_fd) != 0) {
         log_perror("Failed to close temporary file: ");
@@ -311,24 +311,24 @@ receive_file(const std::string & output_file, MsgChannel * cserver)
 
 int
 build_remote_int(CompileJob &        job,
-                 UseCSMsg *          usecs,
+                 const UseCSMsg &    usecs,
                  MsgChannel *        local_daemon,
                  const std::string & environment,
                  const std::string & version_file,
                  const char *        preproc_file,
                  bool                output)
 {
-    std::string  hostname = usecs->hostname;
-    unsigned int port = usecs->port;
-    int          job_id = usecs->job_id;
-    bool         got_env = usecs->got_env;
+    const auto & hostname = usecs.hostname;
+    unsigned int port = usecs.port;
+    int          job_id = usecs.job_id;
+    bool         got_env = usecs.got_env;
+
     job.setJobID(job_id);
     job.setEnvironmentVersion(environment); // hoping on the scheduler's wisdom
     trace() << "Have to use host " << hostname << ":" << port
-            << " - Job ID: " << job.jobID()
-            << " - env: " << usecs->host_platform
+            << " - Job ID: " << job.jobID() << " - env: " << usecs.host_platform
             << " - has env: " << (got_env ? "true" : "false")
-            << " - match j: " << usecs->matched_job_id << "\n";
+            << " - match j: " << usecs.matched_job_id << "\n";
 
     int status = 255;
 
@@ -386,13 +386,15 @@ build_remote_int(CompileJob &        job,
                                       "Error 22 - error sending environment");
                 }
 
-                Msg * verify_msg = cserver->get_msg(60);
+                constexpr int timeout{60};
+                auto          msg = cserver->get_msg(timeout);
 
-                if (verify_msg && verify_msg->type == M_VERIFY_ENV_RESULT) {
-                    if (!static_cast<VerifyEnvResultMsg *>(verify_msg)->ok) {
-                        // The remote can't handle the environment at all (e.g.
-                        // kernel too old), mark it as never to be used again
-                        // for this environment.
+                auto * verify_env = ext::get_if<VerifyEnvResultMsg>(&msg);
+                if (verify_env != nullptr) {
+                    if (!verify_env->ok) {
+                        // The remote can't handle the environment at all
+                        // (e.g. kernel too old), mark it as never to be
+                        // used again for this environment.
                         log_warning()
                             << "Host " << hostname
                             << " did not successfully verify environment."
@@ -401,7 +403,6 @@ build_remote_int(CompileJob &        job,
                                                       job.environmentVersion(),
                                                       hostname);
                         local_daemon->send_msg(blacklist);
-                        delete verify_msg;
                         throw ClientError(24,
                                           "Error 24 - remote " + hostname +
                                               " unable to handle environment");
@@ -410,9 +411,7 @@ build_remote_int(CompileJob &        job,
                             << "Verified host " << hostname
                             << " for environment " << job.environmentVersion()
                             << " (" << job.targetPlatform() << ")" << std::endl;
-                    delete verify_msg;
                 } else {
-                    delete verify_msg;
                     throw ClientError(25,
                                       "Error 25 - other error verifying "
                                       "environment on remote");
@@ -439,11 +438,10 @@ build_remote_int(CompileJob &        job,
                            Arg_Remote);
         }
 
-        CompileFileMsg compile_file(&job);
         {
             LogBlock b("send compile_file");
 
-            if (!cserver->send_msg(compile_file)) {
+            if (!cserver->send_msg(CompileFileMsg{job})) {
                 log_warning() << "write of job failed" << std::endl;
                 throw ClientError(9, "Error 9 - error sending file to remote");
             }
@@ -465,8 +463,8 @@ build_remote_int(CompileJob &        job,
             HostUnlock hostUnlock; // automatic dcc_unlock()
 
             /* This will fork, and return the pid of the child.  It will not
-               return for the child itself.  If it returns normally it will have
-               closed the write fd, i.e. sockets[1].  */
+               return for the child itself.  If it returns normally it will
+               have closed the write fd, i.e. sockets[1].  */
             pid_t cpp_pid = call_cpp(job, sockets[1], sockets[0]);
 
             if (cpp_pid < 0) {
@@ -491,14 +489,14 @@ build_remote_int(CompileJob &        job,
                 cserver = nullptr;
                 log_warning() << "call_cpp process failed with exit status "
                               << shell_exit_status(status) << std::endl;
-                // GCC's -fdirectives-only has a number of cases that it doesn't
-                // handle properly, so if in such mode preparing the source
-                // fails, try again recompiling locally. This will cause double
-                // error in case it is a real error, but it'll build
-                // successfully if it was just -fdirectives-only being broken.
-                // In other cases fail directly, Clang's -frewrite-includes is
-                // much more reliable than -fdirectives-only, so is GCC's plain
-                // -E.
+                // GCC's -fdirectives-only has a number of cases that it
+                // doesn't handle properly, so if in such mode preparing the
+                // source fails, try again recompiling locally. This will
+                // cause double error in case it is a real error, but it'll
+                // build successfully if it was just -fdirectives-only being
+                // broken. In other cases fail directly, Clang's
+                // -frewrite-includes is much more reliable than
+                // -fdirectives-only, so is GCC's plain -E.
                 if (!compiler_is_clang(job) &&
                     compiler_only_rewrite_includes(job))
                     throw RemoteError(103,
@@ -524,34 +522,26 @@ build_remote_int(CompileJob &        job,
             throw ClientError(12, "Error 12 - failed to send file to remote");
         }
 
-        Msg * msg;
+        Msg msg{};
         {
-            LogBlock wait_cs("wait for cs");
-            msg = cserver->get_msg(12 * 60);
-
-            if (!msg) {
-                throw ClientError(
-                    14, "Error 14 - error reading message from remote");
-            }
+            LogBlock      wait_cs("wait for cs");
+            constexpr int timeout{12 * 60};
+            msg = cserver->get_msg(timeout);
         }
 
         check_for_failure(msg, cserver);
 
-        if (msg->type != M_COMPILE_RESULT) {
+        auto * crmsg_p = ext::get_if<CompileResultMsg>(&msg);
+        if (crmsg_p == nullptr) {
             log_warning() << "waited for compile result, but got "
-                          << (char)msg->type << std::endl;
-            delete msg;
+                          << message_type(msg) << std::endl;
             throw ClientError(
                 13, "Error 13 - did not get compile response message");
         }
+        auto & crmsg = *crmsg_p;
 
-        CompileResultMsg * crmsg = dynamic_cast<CompileResultMsg *>(msg);
-        assert(crmsg);
-
-        status = crmsg->status;
-
-        if (status && crmsg->was_out_of_memory) {
-            delete crmsg;
+        status = crmsg.status;
+        if (status && crmsg.was_out_of_memory) {
             log_warning() << "the server ran out of memory, recompiling locally"
                           << std::endl;
             throw RemoteError(101,
@@ -560,9 +550,8 @@ build_remote_int(CompileJob &        job,
         }
 
         if (output) {
-            if ((!crmsg->out.empty() || !crmsg->err.empty()) &&
+            if ((!crmsg.out.empty() || !crmsg.err.empty()) &&
                 output_needs_workaround(job)) {
-                delete crmsg;
                 log_warning() << "command needs stdout/stderr workaround, "
                                  "recompiling locally"
                               << std::endl;
@@ -573,32 +562,30 @@ build_remote_int(CompileJob &        job,
                                   "workaround, recompiling locally");
             }
 
-            if (crmsg->err.find("file not found") != std::string::npos) {
-                delete crmsg;
+            if (crmsg.err.find("file not found") != std::string::npos) {
                 log_warning() << "remote is missing file, recompiling locally"
                               << std::endl;
-                throw RemoteError(
-                    104,
-                    "Error 104 - remote is missing file, recompiling locally");
+                throw RemoteError(104,
+                                  "Error 104 - remote is missing file, "
+                                  "recompiling locally");
             }
 
             ignore_result(
-                write(STDOUT_FILENO, crmsg->out.c_str(), crmsg->out.size()));
+                write(STDOUT_FILENO, crmsg.out.c_str(), crmsg.out.size()));
 
             if (colorify_wanted(job)) {
-                colorify_output(crmsg->err);
+                colorify_output(crmsg.err);
             } else {
-                ignore_result(write(
-                    STDERR_FILENO, crmsg->err.c_str(), crmsg->err.size()));
+                ignore_result(
+                    write(STDERR_FILENO, crmsg.err.c_str(), crmsg.err.size()));
             }
 
-            if (status && (crmsg->err.length() || crmsg->out.length())) {
+            if (status && (crmsg.err.length() || crmsg.out.length())) {
                 log_info() << "Compiled on " << hostname << std::endl;
             }
         }
 
-        bool have_dwo_file = crmsg->have_dwo_file;
-        delete crmsg;
+        bool have_dwo_file = crmsg.have_dwo_file;
 
         assert(!job.outputFile().empty());
 
@@ -614,14 +601,15 @@ build_remote_int(CompileJob &        job,
     } catch (...) {
         // Handle pending status messages, if any.
         if (cserver) {
-            while (Msg * msg = cserver->get_msg(0, true)) {
-                if (msg->type == M_STATUS_TEXT)
+            Msg msg{};
+            do {
+                msg = cserver->get_msg(0, true);
+                if (auto * stmsg = ext::get_if<StatusTextMsg>(&msg)) {
                     log_error()
                         << "Remote status (compiled on " << cserver->name
-                        << "): " << static_cast<StatusTextMsg *>(msg)->text
-                        << std::endl;
-                delete msg;
-            }
+                        << "): " << stmsg->text << std::endl;
+                }
+            } while (!ext::holds_alternative<ext::monostate>(msg));
             delete cserver;
             cserver = nullptr;
         }
@@ -675,25 +663,24 @@ md5_for_file(const std::string & file)
 }
 
 bool
-maybe_build_local(MsgChannel * local_daemon,
-                  UseCSMsg *   usecs,
-                  CompileJob & job,
-                  int &        ret)
+maybe_build_local(MsgChannel *     local_daemon,
+                  const UseCSMsg & usecs,
+                  CompileJob &     job,
+                  int &            ret)
 {
-    remote_daemon = usecs->hostname;
+    remote_daemon = usecs.hostname;
 
-    if (usecs->hostname == "127.0.0.1") {
+    if (usecs.hostname == "127.0.0.1") {
         // If this is a test build, do local builds on the local daemon
         // that has --no-remote, use remote building for the remaining ones.
-        if (getenv("ICECC_TEST_REMOTEBUILD") && usecs->port != 0)
+        if (getenv("ICECC_TEST_REMOTEBUILD") && usecs.port != 0)
             return false;
         trace() << "building myself, but telling localhost\n";
-        int job_id = usecs->job_id;
+        int job_id = usecs.job_id;
         job.setJobID(job_id);
         job.setEnvironmentVersion("__client");
-        CompileFileMsg compile_file(&job);
 
-        if (!local_daemon->send_msg(compile_file)) {
+        if (!local_daemon->send_msg(CompileFileMsg{job})) {
             log_warning() << "write of job failed" << std::endl;
             throw ClientError(29, "Error 29 - write of job failed");
         }
@@ -923,24 +910,21 @@ build_remote(CompileJob &         job,
             throw ClientError(24, "Error 24 - asked for CS");
         }
 
-        UseCSMsg * usecs = get_server(local_daemon);
-        int        ret;
+        auto msg = local_daemon->get_msg(niceness_timeout());
 
-        try {
-            if (!maybe_build_local(local_daemon, usecs, job, ret))
-                ret = build_remote_int(job,
-                                       usecs,
-                                       local_daemon,
-                                       version_map[usecs->host_platform],
-                                       versionfile_map[usecs->host_platform],
-                                       nullptr,
-                                       true);
-        } catch (...) {
-            delete usecs;
-            throw;
+        const auto & usecs = get_use_cs(msg);
+        int          ret;
+
+        if (!maybe_build_local(local_daemon, usecs, job, ret)) {
+            ret = build_remote_int(job,
+                                   usecs,
+                                   local_daemon,
+                                   version_map[usecs.host_platform],
+                                   versionfile_map[usecs.host_platform],
+                                   nullptr,
+                                   true);
         }
 
-        delete usecs;
         return ret;
     } else {
         std::string preproc;
@@ -998,9 +982,14 @@ build_remote(CompileJob &         job,
 
         std::unordered_map<pid_t, int> jobmap;
         std::vector<CompileJob>        jobs(to_repeat, job);
-        std::vector<UseCSMsg *>        umsgs(to_repeat, nullptr);
-        std::vector<int>               exit_codes(to_repeat, default_exit_code);
-        bool                           misc_error = false;
+
+        std::vector<Msg> msgs{};
+        msgs.reserve(to_repeat);
+        std::vector<std::reference_wrapper<UseCSMsg>> umsgs{};
+        umsgs.reserve(to_repeat);
+
+        std::vector<int> exit_codes(to_repeat, default_exit_code);
+        bool             misc_error = false;
 
         // Launch build processes
         for (int i = 0; i < to_repeat; i++) {
@@ -1013,11 +1002,15 @@ build_remote(CompileJob &         job,
                 buffer = job.outputFile();
             }
 
-            umsgs[i] = get_server(local_daemon);
+            auto msg = local_daemon->get_msg(niceness_timeout());
+            msgs.emplace_back(std::move(msg));
 
-            remote_daemon = umsgs[i]->hostname;
+            UseCSMsg & umsg = get_use_cs(msgs.back());
+            umsgs.emplace_back(umsg);
 
-            trace() << "got_server_for_job " << umsgs[i]->hostname << std::endl;
+            remote_daemon = umsg.hostname;
+
+            trace() << "got_server_for_job " << umsg.hostname << std::endl;
 
             flush_debug();
 
@@ -1033,13 +1026,13 @@ build_remote(CompileJob &         job,
 
                 try {
                     if (!maybe_build_local(
-                            local_daemon, umsgs[i], jobs[i], ret))
+                            local_daemon, umsgs.back(), jobs[i], ret))
                         ret = build_remote_int(
                             jobs[i],
-                            umsgs[i],
+                            umsg,
                             local_daemon,
-                            version_map[umsgs[i]->host_platform],
-                            versionfile_map[umsgs[i]->host_platform],
+                            version_map[umsg.host_platform],
+                            versionfile_map[umsg.host_platform],
                             preproc.c_str(),
                             i == 0);
                 } catch (const std::exception & e) {
@@ -1077,6 +1070,8 @@ build_remote(CompileJob &         job,
             std::string first_md5 = md5_for_file(jobs[0].outputFile());
 
             for (int i = 1; i < to_repeat; i++) {
+                const UseCSMsg & first_umsg = umsgs[0];
+                const UseCSMsg & umsg = umsgs[i];
                 if (!exit_codes[0]) { // if the first failed, we fail anyway
                     if (exit_codes[i] ==
                         42) { // they are free to fail for misc reasons
@@ -1085,8 +1080,8 @@ build_remote(CompileJob &         job,
 
                     if (exit_codes[i]) {
                         log_error()
-                            << umsgs[i]->hostname << " compiled with exit code "
-                            << exit_codes[i] << " and " << umsgs[0]->hostname
+                            << umsg.hostname << " compiled with exit code "
+                            << exit_codes[i] << " and " << first_umsg.hostname
                             << " compiled with exit code " << exit_codes[0]
                             << " - aborting!\n";
                         if (unlink(jobs[0].outputFile().c_str()) < 0) {
@@ -1111,10 +1106,10 @@ build_remote(CompileJob &         job,
 
                     if (other_md5 != first_md5) {
                         log_error()
-                            << umsgs[i]->hostname << " compiled "
+                            << umsg.hostname << " compiled "
                             << jobs[0].outputFile() << " with md5 sum "
                             << other_md5 << "(" << jobs[i].outputFile() << ")"
-                            << " and " << umsgs[0]->hostname
+                            << " and " << first_umsg.hostname
                             << " compiled with md5 sum " << first_md5
                             << " - aborting!\n";
                         rename(jobs[0].outputFile().c_str(),
@@ -1148,7 +1143,6 @@ build_remote(CompileJob &         job,
                             << "\t" << dwo_file << std::endl;
                     }
                 }
-                delete umsgs[i];
             }
         } else {
             if (unlink(jobs[0].outputFile().c_str()) < 0) {
@@ -1180,11 +1174,8 @@ build_remote(CompileJob &         job,
                             << "\t" << dwo_file << std::endl;
                     }
                 }
-                delete umsgs[i];
             }
         }
-
-        delete umsgs[0];
 
         if (unlink(preproc.c_str()) < 0) {
             log_perror("unlink failed") << "\t" << preproc << std::endl;

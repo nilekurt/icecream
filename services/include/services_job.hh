@@ -26,6 +26,7 @@
 
 #include <iostream>
 #include <list>
+#include <memory>
 #include <sstream>
 #include <string>
 
@@ -45,8 +46,9 @@ public:
     }
 };
 
-class CompileJob {
-public:
+struct CompileJob {
+    using UPtr = std::unique_ptr<CompileJob>;
+
     typedef enum
     {
         Lang_C,
