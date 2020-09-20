@@ -26,6 +26,8 @@
 #include "client_util.hh"
 #include "local.hh"
 #include "logging.hh"
+#include "make_array.hh"
+#include "string_view.hh"
 
 extern "C" {
 #include <sys/stat.h>
@@ -45,22 +47,27 @@ str_equal(const char * a, const char * b)
     return strcmp(a, b) == 0;
 }
 
-int
-str_startswith(const char * head, const char * worm)
+bool
+is_prefix_of(const std::string & prefix, const std::string & candidate)
 {
-    return !strncmp(head, worm, strlen(head));
+    return candidate.find(prefix) == 0;
+}
+
+bool
+is_prefix_of(const char * prefix, const std::string & candidate)
+{
+    return candidate.find(prefix) == 0;
 }
 
 /* Some files should always be built locally... */
 bool
 should_always_build_locally(const std::string & filepath)
 {
-    std::string  p = find_basename(filepath);
-    const char * filename = p.c_str();
+    std::string filename = find_basename(filepath);
 
     /* autoconf */
-    if (str_startswith("conftest.", filename) ||
-        str_startswith("tmp.conftest.", filename)) {
+    if (is_prefix_of("conftest.", filename) ||
+        is_prefix_of("tmp.conftest.", filename)) {
         return true;
     }
 
@@ -73,9 +80,9 @@ should_always_build_locally(const std::string & filepath)
     };
 
     /* cmake */
-    if (str_startswith("Check", filename)) {
+    if (is_prefix_of("Check", filename)) {
         for (const char * const cmake_check : cmake_checks) {
-            if (str_startswith(cmake_check, filename)) {
+            if (is_prefix_of(cmake_check, filename)) {
                 return true;
             }
         }
@@ -85,7 +92,7 @@ should_always_build_locally(const std::string & filepath)
 }
 
 bool
-analyze_program(const char * name, CompileJob & job, bool & icerun)
+analyze_program(const std::string & name, CompileJob & job, bool & icerun)
 {
     std::string compiler_name = find_basename(name);
 
@@ -109,8 +116,112 @@ analyze_program(const char * name, CompileJob & job, bool & icerun)
     return false;
 }
 
+constexpr auto arguments_with_spaces =
+    ext::make_array<ext::string_view>({"-dyld-prefix",
+                                       "-gcc-toolchain",
+                                       "--param",
+                                       "--sysroot",
+                                       "--system-header-prefix",
+                                       "-target",
+                                       "--assert",
+                                       "--allowable_client",
+                                       "-arch",
+                                       "-arch_only",
+                                       "-arcmt-migrate-report-output",
+                                       "--prefix",
+                                       "-bundle_loader",
+                                       "-dependency-dot",
+                                       "-dependency-file",
+                                       "-dylib_file",
+                                       "-exported_symbols_list",
+                                       "--bootclasspath",
+                                       "--CLASSPATH",
+                                       "--classpath",
+                                       "--resource",
+                                       "--encoding",
+                                       "--extdirs",
+                                       "-filelist",
+                                       "-fmodule-implementation-of",
+                                       "-fmodule-name",
+                                       "-fmodules-user-build-path",
+                                       "-fnew-alignment",
+                                       "-force_load",
+                                       "--output-class-directory",
+                                       "-framework",
+                                       "-frewrite-map-file",
+                                       "-ftrapv-handler",
+                                       "-image_base",
+                                       "-init",
+                                       "-install_name",
+                                       "-lazy_framework",
+                                       "-lazy_library",
+                                       "-meabi",
+                                       "-mhwdiv",
+                                       "-mllvm",
+                                       "-module-dependency-dir",
+                                       "-mthread-model",
+                                       "-multiply_defined",
+                                       "-multiply_defined_unused",
+                                       "-rpath",
+                                       "--rtlib",
+                                       "-seg_addr_table",
+                                       "-seg_addr_table_filename",
+                                       "-segs_read_only_addr",
+                                       "-segs_read_write_addr",
+                                       "-serialize-diagnostics",
+                                       "--serialize-diagnostics",
+                                       "-std",
+                                       "--stdlib",
+                                       "--force-link",
+                                       "-umbrella",
+                                       "-unexported_symbols_list",
+                                       "-weak_library",
+                                       "-weak_reference_mismatches",
+                                       "-B",
+                                       "-D",
+                                       "-U",
+                                       "-I",
+                                       "-i",
+                                       "--include-directory",
+                                       "-L",
+                                       "-l",
+                                       "--library-directory",
+                                       "-MF",
+                                       "-MT",
+                                       "-MQ",
+                                       "-cxx-isystem",
+                                       "-c-isystem",
+                                       "-idirafter",
+                                       "--include-directory-after",
+                                       "-iframework",
+                                       "-iframeworkwithsysroot",
+                                       "-imacros",
+                                       "-imultilib",
+                                       "-iprefix",
+                                       "--include-prefix",
+                                       "-iquote",
+                                       "-include",
+                                       "-include-pch",
+                                       "-isysroot",
+                                       "-isystem",
+                                       "-isystem-after",
+                                       "-ivfsoverlay",
+                                       "-iwithprefix",
+                                       "--include-with-prefix",
+                                       "--include-with-prefix-after",
+                                       "-iwithprefixbefore",
+                                       "--include-with-prefix-before",
+                                       "-iwithsysroot"});
+
 bool
-is_argument_with_space(const char * argument)
+is_argument_with_space(const std::string & s)
+{
+    const auto end = arguments_with_spaces.cend();
+    return std::find(arguments_with_spaces.cbegin(), end, s) != end;
+}
+
+bool
+is_argument_with_space(const char * a)
 {
     // List taken from https://clang.llvm.org/docs/genindex.html
     // TODO: Add support for arguments with two or three values
@@ -122,109 +233,10 @@ is_argument_with_space(const char * argument)
     //         -segcreate <arg1> <arg2> <arg3>
     //         -segprot <arg1> <arg2> <arg3>
     //       Move some arguments to arg_cpp or ArgumentType::LOCAL
-    static const char * const arguments[] = {"-dyld-prefix",
-                                             "-gcc-toolchain",
-                                             "--param",
-                                             "--sysroot",
-                                             "--system-header-prefix",
-                                             "-target",
-                                             "--assert",
-                                             "--allowable_client",
-                                             "-arch",
-                                             "-arch_only",
-                                             "-arcmt-migrate-report-output",
-                                             "--prefix",
-                                             "-bundle_loader",
-                                             "-dependency-dot",
-                                             "-dependency-file",
-                                             "-dylib_file",
-                                             "-exported_symbols_list",
-                                             "--bootclasspath",
-                                             "--CLASSPATH",
-                                             "--classpath",
-                                             "--resource",
-                                             "--encoding",
-                                             "--extdirs",
-                                             "-filelist",
-                                             "-fmodule-implementation-of",
-                                             "-fmodule-name",
-                                             "-fmodules-user-build-path",
-                                             "-fnew-alignment",
-                                             "-force_load",
-                                             "--output-class-directory",
-                                             "-framework",
-                                             "-frewrite-map-file",
-                                             "-ftrapv-handler",
-                                             "-image_base",
-                                             "-init",
-                                             "-install_name",
-                                             "-lazy_framework",
-                                             "-lazy_library",
-                                             "-meabi",
-                                             "-mhwdiv",
-                                             "-mllvm",
-                                             "-module-dependency-dir",
-                                             "-mthread-model",
-                                             "-multiply_defined",
-                                             "-multiply_defined_unused",
-                                             "-rpath",
-                                             "--rtlib",
-                                             "-seg_addr_table",
-                                             "-seg_addr_table_filename",
-                                             "-segs_read_only_addr",
-                                             "-segs_read_write_addr",
-                                             "-serialize-diagnostics",
-                                             "--serialize-diagnostics",
-                                             "-std",
-                                             "--stdlib",
-                                             "--force-link",
-                                             "-umbrella",
-                                             "-unexported_symbols_list",
-                                             "-weak_library",
-                                             "-weak_reference_mismatches",
-                                             "-B",
-                                             "-D",
-                                             "-U",
-                                             "-I",
-                                             "-i",
-                                             "--include-directory",
-                                             "-L",
-                                             "-l",
-                                             "--library-directory",
-                                             "-MF",
-                                             "-MT",
-                                             "-MQ",
-                                             "-cxx-isystem",
-                                             "-c-isystem",
-                                             "-idirafter",
-                                             "--include-directory-after",
-                                             "-iframework",
-                                             "-iframeworkwithsysroot",
-                                             "-imacros",
-                                             "-imultilib",
-                                             "-iprefix",
-                                             "--include-prefix",
-                                             "-iquote",
-                                             "-include",
-                                             "-include-pch",
-                                             "-isysroot",
-                                             "-isystem",
-                                             "-isystem-after",
-                                             "-ivfsoverlay",
-                                             "-iwithprefix",
-                                             "--include-with-prefix",
-                                             "--include-with-prefix-after",
-                                             "-iwithprefixbefore",
-                                             "--include-with-prefix-before",
-                                             "-iwithsysroot"};
 
-    for (const char * const arg : arguments) {
-        if (str_equal(arg, argument)) {
-            return true;
-        }
-    }
-
-    return false;
+    return std::any_of(arguments_with_spaces.cbegin(),
+                       arguments_with_spaces.cend(),
+                       [a](const char * b) { return str_equal(a, b); });
 }
 
 bool
@@ -238,7 +250,7 @@ analyze_assembler_arg(std::string & arg, std::list<std::string> * extrafiles)
         return false;
     }
 
-    if (str_startswith("-a", pos)) {
+    if (is_prefix_of("-a", arg)) {
         /* -a[a-z]*=output, which directs the listing to the named file
          * and cannot be remote.
          */
@@ -286,10 +298,10 @@ analyze_assembler_arg(std::string & arg, std::list<std::string> * extrafiles)
 } // namespace
 
 bool
-analyse_argv(const char * const *     argv,
-             CompileJob &             job,
-             bool                     icerun,
-             std::list<std::string> * extrafiles)
+analyse_argv(const std::vector<std::string> & argv,
+             CompileJob &                     job,
+             bool                             icerun,
+             std::list<std::string> *         extrafiles)
 {
     ArgumentsList args;
     std::string   ofile;
@@ -305,8 +317,8 @@ analyse_argv(const char * const *     argv,
 #endif
 
     bool had_cc = (job.compilerName().size() > 0);
-    bool always_local = analyze_program(
-        had_cc ? job.compilerName().c_str() : argv[0], job, icerun);
+    bool always_local =
+        analyze_program(had_cc ? job.compilerName() : argv[0], job, icerun);
     bool         seen_c = false;
     bool         seen_s = false;
     bool         seen_mf = false;
@@ -329,45 +341,86 @@ analyse_argv(const char * const *     argv,
     explicit_color_diagnostics = false;
     explicit_no_show_caret = false;
 
-    for (int i = had_cc ? 2 : 1; argv[i]; i++) {
-        const char * a = argv[i];
+    constexpr auto force_local_flags = ext::make_array({"-E",
+                                                        "-fdump",
+                                                        "-combine",
+                                                        "-fsyntax-only",
+                                                        "-ftime-report",
+                                                        "-ftime-trace"});
+    constexpr auto include_flags =
+        ext::make_array({"-I",
+                         "-i",
+                         "--include-directory",
+                         "-L",
+                         "-l",
+                         "--library-directory",
+                         "-MF",
+                         "-MT",
+                         "-MQ",
+                         "-cxx-isystem",
+                         "-c-isystem",
+                         "-idirafter",
+                         "--include-directory-after",
+                         "-iframework",
+                         "-iframeworkwithsysroot",
+                         "-imacros",
+                         "-imultilib",
+                         "-iprefix",
+                         "--include-prefix",
+                         "-iquote",
+                         "-include",
+                         "-include-pch",
+                         "-isysroot",
+                         "-isystem",
+                         "-isystem-after",
+                         "-ivfsoverlay",
+                         "-iwithprefix",
+                         "--include-with-prefix",
+                         "--include-with-prefix-after",
+                         "-iwithprefixbefore",
+                         "--include-with-prefix-before",
+                         "-iwithsysroot"});
+
+    const auto begin = argv.cbegin();
+    const auto end = argv.cend();
+    for (auto it = had_cc ? std::next(begin) : begin; it != end; ++it) {
+        const std::string & a = *it;
 
         if (icerun) {
             args.append(a, AT::LOCAL);
         } else if (a[0] == '-') {
-            if (!strcmp(a, "-E")) {
+            if (std::any_of(force_local_flags.cbegin(),
+                            force_local_flags.cend(),
+                            [&a](const char * flag) {
+                                return is_prefix_of(flag, a);
+                            })) {
                 always_local = true;
                 args.append(a, AT::LOCAL);
-                log_warning() << "preprocessing, building locally\n";
-            } else if (!strncmp(a, "-fdump", 6) || !strcmp(a, "-combine") ||
-                       !strcmp(a, "-fsyntax-only") ||
-                       !strncmp(a, "-ftime-report", strlen("-ftime-report")) ||
-                       !strcmp(a, "-ftime-trace")) {
-                always_local = true;
-                args.append(a, AT::LOCAL);
-                log_warning()
-                    << "argument " << a << ", building locally\n";
-            } else if (!strcmp(a, "-MD") || !strcmp(a, "-MMD") ||
-                       str_startswith("-Wp,-MD", a) ||
-                       str_startswith("-Wp,-MMD", a)) {
+                log_warning() << "argument " << a << ", building locally\n";
+            } else if (a == "-MD" || a == "-MMD" ||
+                       is_prefix_of("-Wp,-MD", a) ||
+                       is_prefix_of("-Wp,-MMD", a)) {
                 seen_md = true;
                 args.append(a, AT::LOCAL);
                 /* These two generate dependencies as a side effect.  They
                  * should work with the way we call cpp. */
-            } else if (!strcmp(a, "-MG") || !strcmp(a, "-MP")) {
+            } else if (a == "-MG" || a == "-MP") {
                 args.append(a, AT::LOCAL);
                 /* These just modify the behaviour of other -M* options and do
                  * nothing by themselves. */
-            } else if (!strcmp(a, "-MF") || str_startswith("-Wp,-MF", a)) {
+            } else if (a == "-MF" || is_prefix_of("-Wp,-MF", a)) {
                 seen_mf = true;
                 args.append(a, AT::LOCAL);
-                args.append(argv[++i], AT::LOCAL);
+                ++it;
+                assert(it != end);
+                args.append(*it, AT::LOCAL);
                 /* as above but with extra argument */
-            } else if (!strcmp(a, "-MT") || !strcmp(a, "-MQ") ||
-                       str_startswith("-Wp,-MT", a) ||
-                       str_startswith("-Wp,-MQ", a)) {
+            } else if (a == "-MT" || a == "-MQ" || is_prefix_of("-Wp,-MT", a) ||
+                       is_prefix_of("-Wp,-MQ", a)) {
                 args.append(a, AT::LOCAL);
-                args.append(argv[++i], AT::LOCAL);
+                ++it;
+                assert(it != end);
+                args.append(*it, AT::LOCAL);
                 /* as above but with extra argument */
             } else if (a[1] == 'M') {
                 /* -M(anything else) causes the preprocessor to
@@ -378,15 +431,15 @@ analyse_argv(const char * const *     argv,
                    to distribute it even if we could. */
                 always_local = true;
                 args.append(a, AT::LOCAL);
-                log_warning()
-                    << "argument " << a << ", building locally\n";
-            } else if (str_equal("--param", a)) {
+                log_warning() << "argument " << a << ", building locally\n";
+            } else if (a == "--param") {
                 args.append(a, AT::REMOTE);
 
                 assert(is_argument_with_space(a));
                 /* skip next word, being option argument */
-                if (argv[i + 1]) {
-                    args.append(argv[++i], AT::REMOTE);
+                if (std::next(it) != end) {
+                    ++it;
+                    args.append(*it, AT::REMOTE);
                 }
             } else if (a[1] == 'B') {
                 /* -B overwrites the path where the compiler finds the
@@ -394,40 +447,43 @@ analyse_argv(const char * const *     argv,
                 */
                 always_local = true;
                 args.append(a, AT::LOCAL);
-                log_warning()
-                    << "argument " << a << ", building locally\n";
+                log_warning() << "argument " << a << ", building locally\n";
 
-                if (str_equal(a, "-B")) {
+                if (a == "-B") {
                     assert(is_argument_with_space(a));
                     /* skip next word, being option argument */
-                    if (argv[i + 1]) {
-                        args.append(argv[++i], AT::LOCAL);
+                    if (std::next(it) != end) {
+                        ++it;
+                        args.append(*it, AT::LOCAL);
                     }
                 }
-            } else if (str_startswith("-Wa,", a)) {
+            } else if (is_prefix_of("-Wa,", a)) {
                 /* The -Wa option specifies a list of arguments
                  * that are passed to the assembler.
                  * We split them into individual arguments and
                  * call analyze_assembler_arg() for each one.
                  */
-                const char *pos = a + 4, *next_comma;
-                bool        local = false;
-                std::string as_arg;
-                std::string remote_arg = "-Wa";
+                const char * pos = &a[4];
+                const char * next_comma;
+                bool         local = false;
+                std::string  as_arg;
+                std::string  remote_arg = "-Wa";
 
                 while (1) {
                     next_comma = strchr(pos, ',');
 
-                    if (next_comma)
+                    if (next_comma) {
                         as_arg.assign(pos, next_comma - pos);
-                    else
+                    } else {
                         as_arg = pos;
+                    }
 
                     local = analyze_assembler_arg(as_arg, extrafiles);
                     remote_arg += "," + as_arg;
 
-                    if (!next_comma)
+                    if (!next_comma) {
                         break;
+                    }
 
                     pos = next_comma + 1;
                 }
@@ -435,50 +491,46 @@ analyse_argv(const char * const *     argv,
                 if (local) {
                     always_local = true;
                     args.append(a, AT::LOCAL);
-                    log_warning()
-                        << "argument " << a << ", building locally\n";
+                    log_warning() << "argument " << a << ", building locally\n";
                 } else {
                     args.append(remote_arg, AT::REMOTE);
                 }
-            } else if (!strcmp(a, "-S")) {
+            } else if (a == "-S") {
                 seen_s = true;
-            } else if (!strcmp(a, "-fprofile-arcs") ||
-                       !strcmp(a, "-ftest-coverage") ||
-                       !strcmp(a, "--coverage") || !strcmp(a, "-frepo") ||
-                       !strcmp(a, "-fprofile-generate") ||
-                       !strcmp(a, "-fprofile-use") ||
-                       !strcmp(a, "-save-temps") ||
-                       !strcmp(a, "--save-temps") ||
-                       str_startswith(a, "-save-temps=") ||
-                       str_startswith(a, "--save-temps=") ||
-                       !strcmp(a, "-fbranch-probabilities")) {
+            } else if (a == "-fprofile-arcs" || a == "-ftest-coverage" ||
+                       a == "--coverage" || a == "-frepo" ||
+                       a == "-fprofile-generate" || a == "-fprofile-use" ||
+                       a == "-save-temps" || a == "--save-temps" ||
+                       a == "-fbranch-probabilities" ||
+                       is_prefix_of(a, "-save-temps=") ||
+                       is_prefix_of(a, "--save-temps=")) {
                 log_warning()
                     << "compiler will emit additional local files (argument "
                     << a << "); building locally\n";
                 always_local = true;
                 args.append(a, AT::LOCAL);
-            } else if (!strcmp(a, "-gsplit-dwarf")) {
+            } else if (a == "-gsplit-dwarf") {
                 args.append(a, AT::REST);
                 seen_split_dwarf = true;
-            } else if (str_equal(a, "-x")) {
+            } else if (a == "-x") {
                 args.append(a, AT::REST);
                 bool        unsupported = true;
                 std::string unsupported_opt = "??";
-                if (const char * opt = argv[i + 1]) {
-                    ++i;
+                if (std::next(it) != end) {
+                    ++it;
+                    const std::string & opt = *it;
                     args.append(opt, AT::REST);
                     unsupported_opt = opt;
-                    if (str_equal(opt, "c++") || str_equal(opt, "c") ||
-                        str_equal(opt, "objective-c") ||
-                        str_equal(opt, "objective-c++")) {
+                    if (opt == "c++" || opt == "c" || opt == "objective-c" ||
+                        opt == "objective-c++") {
                         CompileJob::Language lang = CompileJob::Lang_Custom;
-                        if (str_equal(opt, "c")) {
+                        if (opt == "c") {
                             lang = CompileJob::Lang_C;
-                        } else if (str_equal(opt, "c++")) {
+                        } else if (opt == "c++") {
                             lang = CompileJob::Lang_CXX;
-                        } else if (str_equal(opt, "objective-c")) {
+                        } else if (opt == "objective-c") {
                             lang = CompileJob::Lang_OBJC;
-                        } else if (str_equal(opt, "objective-c++")) {
+                        } else if (opt == "objective-c++") {
                             lang = CompileJob::Lang_OBJCXX;
                         } else {
                             continue;
@@ -495,34 +547,33 @@ analyse_argv(const char * const *     argv,
                         << "; running locally\n";
                     always_local = true;
                 }
-            } else if (!strcmp(a, "-march=native")) {
+            } else if (a == "-march=native") {
                 args.append(a, AT::REST);
                 seen_march_native = true;
-            } else if (!strcmp(a, "-mcpu=native")) {
+            } else if (a == "-mcpu=native") {
                 args.append(a, AT::REST);
                 seen_mcpu_native = true;
-            } else if (!strcmp(a, "-mtune=native")) {
+            } else if (a == "-mtune=native") {
                 args.append(a, AT::REST);
                 seen_mtune_native = true;
-            } else if (!strcmp(a, "-fexec-charset") ||
-                       !strcmp(a, "-fwide-exec-charset") ||
-                       !strcmp(a, "-finput-charset")) {
+            } else if (a == "-fexec-charset" || a == "-fwide-exec-charset" ||
+                       a == "-finput-charset") {
                 log_warning() << "-f*-charset assumes charset conversion in "
                                  "the build environment; must be local"
                               << '\n';
                 always_local = true;
                 args.append(a, AT::LOCAL);
-            } else if (!strcmp(a, "-c")) {
+            } else if (a == "-c") {
                 seen_c = true;
-            } else if (str_startswith("-o", a)) {
-                if (!strcmp(a, "-o")) {
+            } else if (is_prefix_of("-o", a)) {
+                if (a == "-o") {
                     /* Whatever follows must be the output */
-                    if (argv[i + 1]) {
-                        ofile = argv[++i];
+                    if (std::next(it) != end) {
+                        ++it;
+                        ofile = *it;
                     }
                 } else {
-                    a += 2;
-                    ofile = a;
+                    ofile = std::string(a.begin() + 2, a.end());
                 }
 
                 if (ofile == "-") {
@@ -530,120 +581,94 @@ analyse_argv(const char * const *     argv,
                      * stdout", or "write to a file called '-'".  We can't know,
                      * so we just always run it locally.  Hopefully this is a
                      * pretty rare case. */
-                    log_warning()
-                        << "output to stdout?  running locally\n";
+                    log_warning() << "output to stdout?  running locally\n";
                     always_local = true;
                 }
-            } else if (str_equal("-D", a) || str_equal("-U", a)) {
+            } else if (a == "-D" || a == "-U") {
                 args.append(a, arg_cpp);
 
                 assert(is_argument_with_space(a));
                 /* skip next word, being option argument */
-                if (argv[i + 1]) {
-                    ++i;
-                    args.append(argv[i], arg_cpp);
+                if (std::next(it) != end) {
+                    ++it;
+                    args.append(*it, arg_cpp);
                 }
-            } else if (str_equal("-I", a) || str_equal("-i", a) ||
-                       str_equal("--include-directory", a) ||
-                       str_equal("-L", a) || str_equal("-l", a) ||
-                       str_equal("--library-directory", a) ||
-                       str_equal("-MF", a) || str_equal("-MT", a) ||
-                       str_equal("-MQ", a) || str_equal("-cxx-isystem", a) ||
-                       str_equal("-c-isystem", a) ||
-                       str_equal("-idirafter", a) ||
-                       str_equal("--include-directory-after", a) ||
-                       str_equal("-iframework", a) ||
-                       str_equal("-iframeworkwithsysroot", a) ||
-                       str_equal("-imacros", a) || str_equal("-imultilib", a) ||
-                       str_equal("-iprefix", a) ||
-                       str_equal("--include-prefix", a) ||
-                       str_equal("-iquote", a) || str_equal("-include", a) ||
-                       str_equal("-include-pch", a) ||
-                       str_equal("-isysroot", a) || str_equal("-isystem", a) ||
-                       str_equal("-isystem-after", a) ||
-                       str_equal("-ivfsoverlay", a) ||
-                       str_equal("-iwithprefix", a) ||
-                       str_equal("--include-with-prefix", a) ||
-                       str_equal("--include-with-prefix-after", a) ||
-                       str_equal("-iwithprefixbefore", a) ||
-                       str_equal("--include-with-prefix-before", a) ||
-                       str_equal("-iwithsysroot", a)) {
+            } else if (std::find(include_flags.cbegin(),
+                                 include_flags.cend(),
+                                 a) != include_flags.cend()) {
                 args.append(a, AT::LOCAL);
 
                 assert(is_argument_with_space(a));
                 /* skip next word, being option argument */
-                if (argv[i + 1]) {
-                    ++i;
+                if (std::next(it) != end) {
+                    ++it;
 
-                    if (str_startswith("-O", argv[i])) {
+                    if (is_prefix_of("-O", *it)) {
                         always_local = true;
-                        log_warning() << "argument " << a << " " << argv[i]
+                        log_warning() << "argument " << a << " " << *it
                                       << ", building locally\n";
                     }
 
-                    args.append(argv[i], AT::LOCAL);
+                    args.append(*it, AT::LOCAL);
                 }
-            } else if (str_equal("-fmodules", a) ||
-                       str_equal("-fcxx-modules", a) ||
-                       str_equal("-fmodules-ts", a) ||
-                       str_startswith("-fmodules-cache-path=", a)) {
+            } else if (a == "-fmodules" || a == "-fcxx-modules" ||
+                       a == "-fmodules-ts" ||
+                       is_prefix_of("-fmodules-cache-path=", a)) {
                 args.append(a, AT::LOCAL);
-            } else if (str_startswith("-Wp,", a) || str_startswith("-D", a) ||
-                       str_startswith("-U", a)) {
+            } else if (is_prefix_of("-Wp,", a) || is_prefix_of("-D", a) ||
+                       is_prefix_of("-U", a)) {
                 args.append(a, arg_cpp);
-            } else if (str_startswith("-I", a) || str_startswith("-l", a) ||
-                       str_startswith("-L", a)) {
+            } else if (is_prefix_of("-I", a) || is_prefix_of("-l", a) ||
+                       is_prefix_of("-L", a)) {
                 args.append(a, AT::LOCAL);
-            } else if (str_equal("-undef", a)) {
+            } else if (a == "-undef") {
                 args.append(a, arg_cpp);
-            } else if (str_equal("-nostdinc", a) ||
-                       str_equal("-nostdinc++", a) || str_equal("-MD", a) ||
-                       str_equal("-MMD", a) || str_equal("-MG", a) ||
-                       str_equal("-MP", a)) {
+            } else if (a == "-nostdinc" || a == "-nostdinc++" || a == "-MD" ||
+                       a == "-MMD" || a == "-MG" || a == "-MP") {
                 args.append(a, AT::LOCAL);
-            } else if (str_equal("-Wmissing-include-dirs", a) ||
-                       str_equal("-Werror=missing-include-dirs", a)) {
+            } else if (a == "-Wmissing-include-dirs" ||
+                       a == "-Werror=missing-include-dirs") {
                 args.append(a, AT::LOCAL);
-            } else if (str_equal("-fno-color-diagnostics", a)) {
+            } else if (a == "-fno-color-diagnostics") {
                 explicit_color_diagnostics = true;
                 args.append(a, AT::REST);
-            } else if (str_equal("-fcolor-diagnostics", a)) {
+            } else if (a == "-fcolor-diagnostics") {
                 explicit_color_diagnostics = true;
                 args.append(a, AT::REST);
-            } else if (str_equal("-fno-diagnostics-color", a) ||
-                       str_equal("-fdiagnostics-color=never", a)) {
+            } else if (a == "-fno-diagnostics-color" ||
+                       a == "-fdiagnostics-color=never") {
                 explicit_color_diagnostics = true;
                 args.append(a, AT::REST);
-            } else if (str_equal("-fdiagnostics-color", a) ||
-                       str_equal("-fdiagnostics-color=always", a)) {
+            } else if (a == "-fdiagnostics-color" ||
+                       a == "-fdiagnostics-color=always") {
                 explicit_color_diagnostics = true;
                 args.append(a, AT::REST);
-            } else if (str_equal("-fdiagnostics-color=auto", a)) {
+            } else if (a == "-fdiagnostics-color=auto") {
                 // Drop the option here and pretend it wasn't given,
                 // the code below will decide whether to enable colors or not.
                 explicit_color_diagnostics = false;
-            } else if (str_equal("-fno-diagnostics-show-caret", a)) {
+            } else if (a == "-fno-diagnostics-show-caret") {
                 explicit_no_show_caret = true;
                 args.append(a, AT::REST);
-            } else if (str_equal("-fdiagnostics-show-caret", a)) {
+            } else if (a == "-fdiagnostics-show-caret") {
                 explicit_no_show_caret = false;
                 args.append(a, AT::REST);
-            } else if (str_startswith("-fplugin=", a) ||
-                       str_startswith("-fsanitize-blacklist=", a) ||
-                       str_startswith("-fprofile-sample-use=", a)) {
+            } else if (is_prefix_of("-fplugin=", a) ||
+                       is_prefix_of("-fsanitize-blacklist=", a) ||
+                       is_prefix_of("-fprofile-sample-use=", a)) {
                 const char *              prefix = nullptr;
                 static const char * const prefixes[] = {
                     "-fplugin=",
                     "-fsanitize-blacklist=",
                     "-fprofile-sample-use="};
                 for (const char * const pr : prefixes) {
-                    if (str_startswith(pr, a)) {
+                    if (is_prefix_of(pr, a)) {
                         prefix = pr;
                         break;
                     }
                 }
                 assert(prefix != NULL);
-                std::string file = a + strlen(prefix);
+                std::string file{a.begin() + strlen(prefix), a.end()};
 
                 if (access(file.c_str(), R_OK) == 0) {
                     file = get_absfilename(file);
@@ -655,34 +680,38 @@ analyse_argv(const char * const *     argv,
                 }
 
                 args.append(prefix + file, AT::REST);
-            } else if (str_equal("-Xclang", a)) {
-                if (argv[i + 1]) {
-                    ++i;
-                    const char * p = argv[i];
+            } else if (a == "-Xclang") {
+                if (std::next(it) != end) {
+                    ++it;
+                    const std::string & p = *it;
 
-                    if (str_equal("-load", p)) {
-                        if (argv[i + 1] && argv[i + 2] &&
-                            str_equal(argv[i + 1], "-Xclang")) {
+                    if (p == "-load") {
+                        const auto next_it = std::next(it);
+                        const auto next_next_it = std::next(next_it);
+                        if (next_it != end && next_next_it != end &&
+                            *next_it == "-Xclang") {
                             args.append(a, AT::REST);
                             args.append(p, AT::REST);
-                            std::string file = argv[i + 2];
+                            const std::string & orig = *next_next_it;
+                            std::string         file{};
 
-                            if (access(file.c_str(), R_OK) == 0) {
-                                file = get_absfilename(file);
+                            if (access(orig.c_str(), R_OK) == 0) {
+                                file = get_absfilename(orig);
                                 extrafiles->push_back(file);
                             } else {
+                                file = orig;
                                 always_local = true;
                                 log_warning()
                                     << "plugin for argument " << a << " " << p
-                                    << " " << argv[i + 1] << " " << file
+                                    << " " << *next_it << " " << file
                                     << " missing, building locally\n";
                             }
 
-                            args.append(argv[i + 1], AT::REST);
+                            args.append(*next_it, AT::REST);
                             args.append(file, AT::REST);
-                            i += 2;
+                            it = next_next_it;
                         }
-                    } else if (str_equal("-building-pch-with-obj", p)) {
+                    } else if (p == "-building-pch-with-obj") {
                         // We strip the arguments loading the PCH when building
                         // remotely, so the object file would not contain
                         // anything from the PCH, leading to link errors later
@@ -698,28 +727,27 @@ analyse_argv(const char * const *     argv,
                         args.append(p, AT::REST);
                     }
                 }
-            } else if (str_equal("-target", a)) {
+            } else if (a == "-target") {
                 seen_target = true;
                 args.append(a, AT::REST);
-                if (argv[i + 1]) {
-                    args.append(argv[++i], AT::REST);
+                if (std::next(it) != end) {
+                    ++it;
+                    args.append(*it, AT::REST);
                 }
-            } else if (str_startswith("--target=", a)) {
+            } else if (is_prefix_of("--target=", a)) {
                 seen_target = true;
                 args.append(a, AT::REST);
-            } else if (str_equal("-Wunused-macros", a) ||
-                       str_equal("-Werror=unused-macros", a)) {
+            } else if (a == "-Wunused-macros" || a == "-Werror=unused-macros") {
                 wunused_macros = true;
                 args.append(a, AT::REST);
-            } else if (str_equal("-Wno-unused-macros", a)) {
+            } else if (a == "-Wno-unused-macros") {
                 wunused_macros = false;
                 args.append(a, AT::REST);
-            } else if (str_equal("-pedantic", a) ||
-                       str_equal("-Wpedantic", a) ||
-                       str_equal("-pedantic-errors", a)) {
+            } else if (a == "-pedantic" || a == "-Wpedantic" ||
+                       a == "-pedantic-errors") {
                 seen_pedantic = true;
                 args.append(a, AT::REST);
-            } else if (str_equal("-arch", a)) {
+            } else if (a == "-arch") {
                 if (seen_arch) {
                     log_warning()
                         << "multiple -arch options, building locally\n";
@@ -727,15 +755,17 @@ analyse_argv(const char * const *     argv,
                 }
                 seen_arch = false;
                 args.append(a, AT::REST);
-                if (argv[i + 1]) {
-                    args.append(argv[++i], AT::REST);
+                if (std::next(it) != end) {
+                    ++it;
+                    args.append(*it, AT::REST);
                 }
             } else {
                 args.append(a, AT::REST);
 
                 if (is_argument_with_space(a)) {
-                    if (argv[i + 1]) {
-                        args.append(argv[++i], AT::REST);
+                    if (std::next(it) != end) {
+                        ++it;
+                        args.append(*it, AT::REST);
                     }
                 }
             }
@@ -777,8 +807,7 @@ analyse_argv(const char * const *     argv,
         for (auto it = args.begin(); it != args.end();) {
             if (it->first == "-") {
                 always_local = true;
-                log_warning()
-                    << "stdin/stdout argument, building locally\n";
+                log_warning() << "stdin/stdout argument, building locally\n";
                 break;
             }
 
@@ -818,8 +847,11 @@ analyse_argv(const char * const *     argv,
             std::string::size_type dot_index = ifile.rfind('.');
             std::string            ext = ifile.substr(dot_index + 1);
 
-            if (ext == "cc" || ext == "cpp" || ext == "cxx" || ext == "cp" ||
-                ext == "c++" || ext == "C" || ext == "ii") {
+            constexpr auto cxx_extensions =
+                ext::make_array({"cc", "cpp", "cxx", "cp", "c++", "C", "ii"});
+
+            const auto end = cxx_extensions.cend();
+            if (std::find(cxx_extensions.cbegin(), end, ext) != end) {
 #if DEBUG_LEVEL
 
                 if (job.language() != CompileJob::Lang_CXX) {
@@ -908,7 +940,7 @@ analyse_argv(const char * const *     argv,
     // named standard are allowed.  GCC allows GNU extensions by default, so
     // let's check if a standard other than eg gnu11 or gnu++14 was specified.
     if (seen_pedantic && !compiler_is_clang(job) &&
-        (!standard || str_startswith("gnu", standard))) {
+        (!standard || is_prefix_of("gnu", standard))) {
         log_warning() << "argument -pedantic, forcing local preprocessing (try "
                          "using -std=cXX instead of -std=gnuXX)"
                       << '\n';

@@ -4,9 +4,9 @@
 #include "comm.hh"
 
 bool
-analyse_argv(const char * const *     argv,
-             CompileJob &             job,
-             bool                     icerun,
-             std::list<std::string> * extrafiles);
+analyse_argv(const std::vector<std::string> & argv,
+             CompileJob &                     job,
+             bool                             icerun,
+             std::list<std::string> *         extrafiles);
 
 #endif // _ARG_HH_

@@ -25,24 +25,14 @@ struct basic_string_view {
 
     static constexpr size_type npos = std::numeric_limits<size_type>::max();
 
-    constexpr basic_string_view() = default;
+    constexpr basic_string_view() noexcept : data_{nullptr}, size_{0} {}
 
-    constexpr basic_string_view(const basic_string_view & other) = default;
+    constexpr basic_string_view(const basic_string_view & other) noexcept =
+        default;
 
-    constexpr basic_string_view(basic_string_view && other) = delete;
+    constexpr basic_string_view(basic_string_view && other) noexcept = default;
 
-    explicit constexpr basic_string_view(std::basic_string<CharT> & s) noexcept
-        : data_{&s[0]}, size_{s.size()}
-    {
-    }
-
-    template<std::size_t N>
-    explicit constexpr basic_string_view(CharT s[N]) noexcept
-        : data_{&s[0]}, size_{N}
-    {
-    }
-
-    explicit constexpr basic_string_view(CharT * s) noexcept
+    constexpr basic_string_view(const CharT * s) noexcept
         : data_{s}, size_{std::strlen(s)}
     {
     }
@@ -52,11 +42,17 @@ struct basic_string_view {
     {
     }
 
-    constexpr basic_string_view &
-    operator=(const basic_string_view & other) = default;
+    template<typename Iterator>
+    constexpr basic_string_view(Iterator begin, Iterator End) noexcept
+        : data_(begin), size_{std::distance(begin, end)}
+    {
+    }
 
     constexpr basic_string_view &
-    operator=(basic_string_view && other) = delete;
+    operator=(const basic_string_view & other) noexcept = default;
+
+    constexpr basic_string_view &
+    operator=(basic_string_view && other) noexcept = default;
 
     constexpr const_reference
     operator[](size_type i) const noexcept
@@ -148,8 +144,8 @@ struct basic_string_view {
     }
 
 private:
-    pointer   data_;
-    size_type size_;
+    const_pointer data_;
+    size_type     size_;
 };
 
 using string_view = basic_string_view<char>;

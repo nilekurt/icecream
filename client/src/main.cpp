@@ -40,7 +40,7 @@
 #endif
 
 #include "arg.hh"
-#include "argv.h"
+#include "argv.hh"
 #include "client_util.hh"
 #include "errors.h"
 #include "exitcode.h"
@@ -164,57 +164,70 @@ dcc_client_catch_signals()
  * @param args Are [compiler] [extra files...]
  * Compiler can be "gcc", "clang" or a binary (possibly including a path).
  */
+template<typename Iterator>
 int
-create_native(char ** args)
+create_native(Iterator && begin, Iterator && end)
 {
-    char **     extrafiles = args;
+    auto        extrafiles = begin;
     std::string machine_name = determine_platform();
 
     std::string compiler = "gcc";
     if (machine_name.compare(0, 6, "Darwin") == 0) {
         compiler = "clang";
     }
-    if (args[0]) {
-        if (strcmp(args[0], "clang") == 0 || strcmp(args[0], "gcc") == 0) {
-            compiler = args[0];
-            ++extrafiles;
-        } else if (access(args[0], R_OK) == 0 && access(args[0], X_OK) != 0) {
-            // backwards compatibility, the first argument is already an extra
-            // file
-        } else {
-            compiler = compiler_path_lookup(get_c_compiler(args[0]));
-            if (compiler.empty()) {
-                log_error() << "compiler not found\n";
-                return 1;
-            }
-            ++extrafiles;
+
+    if (begin->compare("clang") == 0 || begin->compare("gcc") == 0) {
+        compiler = *begin;
+        ++extrafiles;
+    } else if (access(begin->c_str(), R_OK) == 0 &&
+               access(begin->c_str(), X_OK) != 0) {
+        // backwards compatibility, the first argument is already an extra
+        // file
+    } else {
+        compiler = compiler_path_lookup(get_c_compiler(*begin));
+        if (compiler.empty()) {
+            log_error() << "compiler not found\n";
+            return 1;
         }
+        ++extrafiles;
     }
 
-    std::vector<char *> argv;
+    std::vector<std::string> argv{};
+    constexpr int            n_static_args = 4;
+    argv.reserve(std::distance(extrafiles, end) * 2 + n_static_args);
 
 #ifndef LIBEXECDIR
 #error "Path to libexec must be set"
 #endif // LIBEXECDIR
 
-    argv.push_back(strdup(BINDIR "/icecc-create-env"));
-    argv.push_back(strdup(compiler.c_str()));
+    argv.emplace_back(BINDIR "/icecc-create-env");
+    argv.emplace_back(compiler);
 
-    for (int extracount = 0; extrafiles[extracount]; extracount++) {
-        argv.push_back(strdup("--addfile"));
-        argv.push_back(strdup(extrafiles[extracount]));
+    for (auto it = extrafiles; it != end; ++it) {
+        argv.emplace_back("--addfile");
+        argv.emplace_back(*it);
     }
 
     if (const char * env_compression = getenv("ICECC_ENV_COMPRESSION")) {
-        argv.push_back(strdup("--compression"));
-        argv.push_back(strdup(env_compression));
+        argv.emplace_back("--compression");
+        argv.emplace_back(env_compression);
     }
 
-    argv.push_back(nullptr);
-    execv(argv[0], argv.data());
-    std::ostringstream errmsg;
-    errmsg << "execv " << argv[0] << " failed";
-    log_perror(errmsg.str());
+    const auto char_argv = [&argv]() {
+        std::vector<char *> result{};
+        result.reserve(argv.size());
+
+        for (auto & s : argv) {
+            result.push_back(&s[0]);
+        }
+        result.push_back(nullptr);
+
+        return result;
+    }();
+
+    execv(char_argv[0], char_argv.data());
+    // Execution should stop here if successful
+    log_perror("execv " + argv[0] + " failed");
     return 1;
 }
 
@@ -250,13 +263,14 @@ get_local_daemon()
     return local_daemon;
 }
 
+template<typename Iterator>
 void
-debug_arguments(int argc, char ** argv, bool original)
+debug_arguments(Iterator begin, Iterator end, bool original)
 {
-    std::string argstxt = argv[0];
-    for (int i = 1; i < argc; ++i) {
+    std::string argstxt{*begin};
+    for (auto it = std::next(begin); it != end; ++it) {
         argstxt += ' ';
-        argstxt += argv[i];
+        argstxt += *it;
     }
     if (original) {
         trace() << "invoked as: " << argstxt << '\n';
@@ -265,56 +279,13 @@ debug_arguments(int argc, char ** argv, bool original)
     }
 }
 
-class ArgumentExpander {
-public:
-    ArgumentExpander(int * argcp, char *** argvp)
-    {
-        oldargv = *argvp;
-        oldargc = *argcp;
-        expandargv(argcp, argvp);
-
-        newargv = *argvp;
-        if (newargv == oldargv)
-            newargv = nullptr;
-    }
-
-    ~ArgumentExpander()
-    {
-        if (newargv != nullptr)
-            freeargv(newargv);
-    }
-
-    bool
-    changed() const
-    {
-        return newargv != nullptr;
-    }
-
-    char **
-    originalArgv() const
-    {
-        return oldargv;
-    }
-
-    int
-    originalArgc() const
-    {
-        return oldargc;
-    }
-
-private:
-    char ** newargv;
-    char ** oldargv;
-    int     oldargc;
-};
-
 } // namespace
 
 int
-main(int argc, char ** argv)
+main(int argc_orig, char ** argv_orig)
 {
     // expand @responsefile contents to arguments in argv array
-    ArgumentExpander expand(&argc, &argv);
+    const auto expanded = expand_argv(argc_orig, argv_orig);
 
     const char * env = getenv("ICECC_DEBUG");
     int          debug_level = Error;
@@ -340,25 +311,26 @@ main(int argc, char ** argv)
 
     setup_debug(debug_level, logfile, "ICECC");
 
-    debug_arguments(expand.originalArgc(), expand.originalArgv(), true);
-    if (expand.changed()) {
-        debug_arguments(argc, argv, false);
+    debug_arguments(argv_orig, argv_orig + argc_orig, true);
+    if (expanded.size() > static_cast<std::size_t>(argc_orig)) {
+        debug_arguments(expanded.begin(), expanded.end(), false);
     }
 
     CompileJob job;
     bool       icerun = false;
 
-    std::string compiler_name = argv[0];
+    const auto & compiler_name = expanded[0];
     dcc_client_catch_signals();
 
     std::string cwd = get_cwd();
-    if (!cwd.empty())
+    if (!cwd.empty()) {
         job.setWorkingDirectory(cwd);
+    }
 
     if (find_basename(compiler_name) == rs_program_name) {
-        if (argc > 1) {
-            std::string arg = argv[1];
-
+        if (expanded.size() > 1) {
+            const auto          arg_it = std::next(expanded.begin());
+            const std::string & arg = *arg_it;
             if (arg == "--help") {
                 dcc_show_usage();
                 return 0;
@@ -370,7 +342,7 @@ main(int argc, char ** argv)
             }
 
             if (arg == "--build-native") {
-                return create_native(argv + 2);
+                return create_native(std::next(arg_it), expanded.end());
             }
 
             if (arg.size() > 0) {
@@ -381,8 +353,9 @@ main(int argc, char ** argv)
     } else if (find_basename(compiler_name) == "icerun") {
         icerun = true;
 
-        if (argc > 1) {
-            std::string arg = argv[1];
+        if (expanded.size() > 1) {
+            const auto          arg_it = std::next(expanded.begin());
+            const std::string & arg = *arg_it;
 
             if (arg == "--help") {
                 icerun_show_usage();
@@ -434,8 +407,8 @@ main(int argc, char ** argv)
         local_daemon = get_local_daemon();
     }
 
-    std::list<std::string> extrafiles;
-    local |= analyse_argv(argv, job, icerun, &extrafiles);
+    std::list<std::string> extrafiles{};
+    local |= analyse_argv(expanded, job, icerun, &extrafiles);
 
     /* If ICECC is set to disable, then run job locally, without contacting
        the daemon at all. File-based locking will still ensure that all
@@ -520,8 +493,7 @@ main(int argc, char ** argv)
             trace() << "asking for native environment for " << compiler << '\n';
             if (!local_daemon->sendMsg(
                     GetNativeEnvMsg(compiler, extrafiles, env_compression))) {
-                log_warning()
-                    << "failed to write get native environment\n";
+                log_warning() << "failed to write get native environment\n";
                 local = true;
             } else {
                 // the timeout is high because it creates the native version

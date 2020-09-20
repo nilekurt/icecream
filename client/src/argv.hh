@@ -24,20 +24,13 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef _ARGV_H_
-#define _ARGV_H_
+#ifndef _ARGV_HH_
+#define _ARGV_HH_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <string>
+#include <vector>
 
-void
-expandargv(int * argcp, char *** argvp);
-void
-freeargv(char ** vector);
+std::vector<std::string>
+expand_argv(int argc, char ** argv);
 
-#ifdef __cplusplus
-}
-#endif
-
-#endif // _ARGV_H_
+#endif // _ARGV_HH_
