@@ -153,7 +153,8 @@ prepare_connect(const std::string &  hostname,
 
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(p);
-    memcpy(&remote_addr.sin_addr.s_addr, host->h_addr_list[0], host->h_length);
+    std::memcpy(
+        &remote_addr.sin_addr.s_addr, host->h_addr_list[0], host->h_length);
 
     return remote_fd;
 }
@@ -355,7 +356,7 @@ open_send_broadcast(int port, const char * buf, int size)
     + move read* into MsgChannel, create buffer-fill function
     + add timeouting poll() there, handle it in the different
     + read* functions.
-    + write* unbuffered / or per message buffer (flush in send_msg)
+    + write* unbuffered / or per message buffer (flush in sendMsg)
  * think about error handling
     + saving errno somewhere (in MsgChannel class)
  * handle unknown messages (implement a UnknownMsg holding the content
@@ -364,9 +365,9 @@ open_send_broadcast(int port, const char * buf, int size)
 
 /* Tries to fill the inbuf completely.  */
 bool
-MsgChannel::read_a_bit()
+MsgChannel::readSome()
 {
-    chop_input();
+    chopInput();
     size_t count = inbuflen - inofs;
 
     if (count < 128) {
@@ -380,7 +381,7 @@ MsgChannel::read_a_bit()
     bool   error = false;
 
     while (count) {
-        if (eof) {
+        if (eof_) {
             break;
         }
 
@@ -397,7 +398,7 @@ MsgChannel::read_a_bit()
                 error = true;
             }
         } else if (ret == 0) {
-            eof = true;
+            eof_ = true;
         }
 
         break;
@@ -405,7 +406,7 @@ MsgChannel::read_a_bit()
 
     inofs = buf - inbuf;
 
-    if (!update_state()) {
+    if (!updateState()) {
         error = true;
     }
 
@@ -413,14 +414,14 @@ MsgChannel::read_a_bit()
         // Daemons sometimes successfully do accept() but then the connection
         // gets ECONNRESET. Probably a spurious result from accept(), so
         // just be silent about it in this case.
-        set_error(instate == NEED_PROTO);
+        setError(instate == NEED_PROTO);
         return false;
     }
     return true;
 }
 
 bool
-MsgChannel::update_state()
+MsgChannel::updateState()
 {
     switch (instate) {
         case NEED_PROTO:
@@ -433,7 +434,7 @@ MsgChannel::update_state()
                 uint32_t      remote_prot = 0;
                 unsigned char vers[4];
                 // readuint32 (remote_prot);
-                memcpy(vers, inbuf + intogo, 4);
+                std::memcpy(vers, inbuf + intogo, 4);
                 intogo += 4;
 
                 for (int i = 0; i < 4; ++i) {
@@ -447,7 +448,7 @@ MsgChannel::update_state()
                     if (remote_prot < MIN_PROTOCOL_VERSION ||
                         remote_prot > (1 << 20)) {
                         remote_prot = 0;
-                        set_error();
+                        setError();
                         return false;
                     }
 
@@ -461,10 +462,10 @@ MsgChannel::update_state()
                         vers[i] = remote_prot >> (i * 8);
                     }
 
-                    writefull(vers, 4);
+                    writeFull(vers, 4);
 
-                    if (!flush_writebuf(true)) {
-                        set_error();
+                    if (!flushWritebuf(true)) {
+                        setError();
                         return false;
                     }
 
@@ -475,7 +476,7 @@ MsgChannel::update_state()
 
                     if ((int)remote_prot != protocol) {
                         protocol = 0;
-                        set_error();
+                        setError();
                         return false;
                     }
 
@@ -484,7 +485,7 @@ MsgChannel::update_state()
                     break;
                 } else {
                     trace() << "NEED_PROTO but protocol > 0" << std::endl;
-                    set_error();
+                    setError();
                     return false;
                 }
             }
@@ -503,7 +504,7 @@ MsgChannel::update_state()
                 if (inmsglen > MAX_MSG_SIZE) {
                     log_error() << "received a too large message (size "
                                 << inmsglen << "), ignoring" << std::endl;
-                    set_error();
+                    setError();
                     return false;
                 }
 
@@ -541,7 +542,7 @@ MsgChannel::update_state()
 }
 
 void
-MsgChannel::chop_input()
+MsgChannel::chopInput()
 {
     /* Make buffer smaller, if there's much already read in front
        of it, or it is cheap to do.  */
@@ -556,7 +557,7 @@ MsgChannel::chop_input()
 }
 
 void
-MsgChannel::chop_output()
+MsgChannel::chopOutput()
 {
     if (msgofs > 8192 || msgtogo <= 16) {
         if (msgtogo) {
@@ -568,7 +569,7 @@ MsgChannel::chop_output()
 }
 
 void
-MsgChannel::writefull(const void * _buf, size_t count)
+MsgChannel::writeFull(const void * _buf, size_t count)
 {
     if (msgtogo + count >= msgbuflen) {
         /* Realloc to a multiple of 128.  */
@@ -577,12 +578,12 @@ MsgChannel::writefull(const void * _buf, size_t count)
         assert(msgbuf); // Probably unrecoverable if realloc fails anyway.
     }
 
-    memcpy(msgbuf + msgtogo, _buf, count);
+    std::memcpy(msgbuf + msgtogo, _buf, count);
     msgtogo += count;
 }
 
 bool
-MsgChannel::flush_writebuf(bool blocking)
+MsgChannel::flushWritebuf(bool blocking)
 {
     const char * buf = msgbuf + msgofs;
     bool         error = false;
@@ -640,7 +641,7 @@ MsgChannel::flush_writebuf(bool blocking)
             }
 
             errno = send_errno;
-            log_perror("flush_writebuf() failed");
+            log_perror("flushWritebuf() failed");
             error = true;
             break;
         } else if (ret == 0) {
@@ -654,9 +655,9 @@ MsgChannel::flush_writebuf(bool blocking)
     }
 
     msgofs = buf - msgbuf;
-    chop_output();
+    chopOutput();
     if (error) {
-        set_error();
+        setError();
         return false;
     }
     return true;
@@ -668,7 +669,7 @@ MsgChannel::operator>>(uint32_t & buf)
     if (inofs >= intogo + 4) {
         if (ptrdiff_t(inbuf + intogo) % 4) {
             uint32_t t_buf[1];
-            memcpy(t_buf, inbuf + intogo, 4);
+            std::memcpy(t_buf, inbuf + intogo, 4);
             buf = t_buf[0];
         } else {
             buf = *(uint32_t *)(inbuf + intogo);
@@ -687,7 +688,7 @@ MsgChannel &
 MsgChannel::operator<<(uint32_t i)
 {
     i = htonl(i);
-    writefull(&i, 4);
+    writeFull(&i, 4);
     return *this;
 }
 
@@ -715,7 +716,7 @@ MsgChannel::operator<<(const std::string & s)
 {
     uint32_t len = 1 + s.length();
     *this << len;
-    writefull(s.c_str(), len);
+    writeFull(s.c_str(), len);
     return *this;
 }
 
@@ -729,7 +730,7 @@ MsgChannel::operator>>(std::list<std::string> & l)
     while (len--) {
         std::string s;
         *this >> s;
-        l.push_back(s);
+        l.push_back(std::move(s));
 
         if (inofs == intogo) {
             break;
@@ -742,7 +743,7 @@ MsgChannel::operator>>(std::list<std::string> & l)
 MsgChannel &
 MsgChannel::operator<<(const std::list<std::string> & l)
 {
-    *this << (uint32_t)l.size();
+    *this << static_cast<uint32_t>(l.size());
 
     for (const std::string & s : l) {
         *this << s;
@@ -752,7 +753,7 @@ MsgChannel::operator<<(const std::list<std::string> & l)
 }
 
 void
-MsgChannel::write_environments(const Environments & envs)
+MsgChannel::writeEnvironments(const Environments & envs)
 {
     *this << envs.size();
 
@@ -763,7 +764,7 @@ MsgChannel::write_environments(const Environments & envs)
 }
 
 void
-MsgChannel::read_environments(Environments & envs)
+MsgChannel::readEnvironments(Environments & envs)
 {
     envs.clear();
     uint32_t count;
@@ -774,7 +775,9 @@ MsgChannel::read_environments(Environments & envs)
         std::string vers;
         *this >> plat;
         *this >> vers;
-        envs.push_back(make_pair(plat, vers));
+        envs.emplace_back(std::piecewise_construct,
+                          std::forward_as_tuple(std::move(plat)),
+                          std::forward_as_tuple(std::move(vers)));
     }
 }
 
@@ -798,7 +801,7 @@ MsgChannel::readcompressed(std::vector<uint8_t> & buffer, size_t & _clen)
             log_error() << "Unknown compression protocol " << proto
                         << std::endl;
             _clen = compressed_len;
-            set_error();
+            setError();
             return;
         }
     }
@@ -812,7 +815,7 @@ MsgChannel::readcompressed(std::vector<uint8_t> & buffer, size_t & _clen)
         log_error() << "failure in readcompressed() length checking"
                     << std::endl;
         _clen = compressed_len;
-        set_error();
+        setError();
         return;
     }
 
@@ -866,7 +869,7 @@ MsgChannel::writecompressed(const unsigned char * in_buf,
         out_len = ZSTD_COMPRESSBOUND(in_len);
     *this << in_len;
     size_t msgtogo_old = msgtogo;
-    *this << (uint32_t)0;
+    *this << static_cast<uint32_t>(0);
 
     if (IS_PROTOCOL_40(this))
         *this << proto;
@@ -910,13 +913,13 @@ MsgChannel::writecompressed(const unsigned char * in_buf,
                        "exceeds max size:"
                     << out_len << std::endl;
     }
-    memcpy(msgbuf + msgtogo_old, &_olen, 4);
+    std::memcpy(msgbuf + msgtogo_old, &_olen, 4);
     msgtogo += out_len;
     _out_len = out_len;
 }
 
 void
-MsgChannel::read_line(std::string & line)
+MsgChannel::readLine(std::string & line)
 {
     /* XXX handle DOS and MAC line endings and null bytes as std::string
      * endings.  */
@@ -933,30 +936,30 @@ MsgChannel::read_line(std::string & line)
 }
 
 void
-MsgChannel::write_line(const std::string & line)
+MsgChannel::writeLine(const std::string & line)
 {
     size_t len = line.length();
-    writefull(line.c_str(), len);
+    writeFull(line.c_str(), len);
 
     if (line[len - 1] != '\n') {
         char c = '\n';
-        writefull(&c, 1);
+        writeFull(&c, 1);
     }
 }
 
 void
-MsgChannel::set_error(bool silent)
+MsgChannel::setError(bool silent)
 {
     if (instate == ERROR) {
         return;
     }
     if (!silent && !set_error_recursion) {
         trace() << "setting error state for channel " << dump() << std::endl;
-        // After the state is set to error, get_msg() will not return anything
+        // After the state is set to error, getMsg() will not return anything
         // anymore, so try to fetch last status from the other side, if
         // available.
         set_error_recursion = true;
-        auto msg = get_msg(2, true);
+        auto msg = getMsg(2, true);
 
         auto * stmsg = ext::get_if<StatusTextMsg>(&msg);
         if (stmsg != nullptr) {
@@ -965,7 +968,7 @@ MsgChannel::set_error(bool silent)
         set_error_recursion = false;
     }
     instate = ERROR;
-    eof = true;
+    eof_ = true;
 }
 
 MsgChannel *
@@ -1059,7 +1062,7 @@ Service::createChannel(int fd, struct sockaddr * _a, socklen_t _l)
 {
     MsgChannel * c = new MsgChannel(fd, _a, _l);
 
-    if (!c->wait_for_protocol()) {
+    if (!c->waitProtocol()) {
         delete c;
         c = nullptr;
     }
@@ -1073,7 +1076,7 @@ MsgChannel::MsgChannel(int _fd, struct sockaddr * _a, socklen_t _l) : fd(_fd)
 
     if (addr_len && _a) {
         addr = (struct sockaddr *)malloc(addr_len);
-        memcpy(addr, _a, _l);
+        std::memcpy(addr, _a, _l);
         if (addr->sa_family == AF_UNIX) {
             name = "local unix domain socket";
         } else {
@@ -1097,7 +1100,7 @@ MsgChannel::MsgChannel(int _fd, struct sockaddr * _a, socklen_t _l) : fd(_fd)
     inbuflen = 128;
     inofs = 0;
     intogo = 0;
-    eof = false;
+    eof_ = false;
     set_error_recursion = false;
     maximum_remote_protocol = -1;
 
@@ -1153,11 +1156,11 @@ MsgChannel::MsgChannel(int _fd, struct sockaddr * _a, socklen_t _l) : fd(_fd)
     protocol = -1;
     unsigned char vers[4] = {PROTOCOL_VERSION, 0, 0, 0};
     // writeuint32 ((uint32_t) PROTOCOL_VERSION);
-    writefull(vers, 4);
+    writeFull(vers, 4);
 
-    if (!flush_writebuf(true)) {
+    if (!flushWritebuf(true)) {
         protocol = 0; // unusable
-        set_error();
+        setError();
     }
 
     last_talk = time(nullptr);
@@ -1190,13 +1193,13 @@ std::string
 MsgChannel::dump() const
 {
     return name + ": (" + char((int)instate + 'A') +
-           " eof: " + char(eof + '0') + ")";
+           " eof: " + char(eof_ + '0') + ")";
 }
 
 /* Wait blocking until the protocol setup for this channel is complete.
    Returns false if an error occurred.  */
 bool
-MsgChannel::wait_for_protocol()
+MsgChannel::waitProtocol()
 {
     /* protocol is 0 if we couldn't send our initial protocol version.  */
     if (protocol == 0 || instate == ERROR) {
@@ -1215,17 +1218,17 @@ MsgChannel::wait_for_protocol()
 
         if (ret == 0) {
             log_warning() << "no response within timeout" << std::endl;
-            set_error();
+            setError();
             return false; /* timeout. Consider it a fatal error. */
         }
 
         if (ret < 0) {
-            log_perror("select in wait_for_protocol()");
-            set_error();
+            log_perror("select in waitProtocol()");
+            setError();
             return false;
         }
 
-        if (!read_a_bit() || eof) {
+        if (!readSome() || eof_) {
             return false;
         }
     }
@@ -1255,28 +1258,28 @@ MsgChannel::setBulkTransfer()
 /* This waits indefinitely (well, TIMEOUT seconds) for a complete
    message to arrive.  Returns false if there was some error.  */
 bool
-MsgChannel::wait_for_msg(int timeout)
+MsgChannel::waitMsg(int timeout)
 {
     if (instate == ERROR) {
         return false;
     }
 
-    if (has_msg()) {
+    if (hasMsg()) {
         return true;
     }
 
-    if (!read_a_bit()) {
-        trace() << "!read_a_bit\n";
-        set_error();
+    if (!readSome()) {
+        trace() << "!readSome\n";
+        setError();
         return false;
     }
 
     if (timeout <= 0) {
         // trace() << "timeout <= 0\n";
-        return has_msg();
+        return hasMsg();
     }
 
-    while (!has_msg()) {
+    while (!hasMsg()) {
         pollfd pfd;
         pfd.fd = fd;
         pfd.events = POLLIN;
@@ -1291,9 +1294,9 @@ MsgChannel::wait_for_msg(int timeout)
             return false;
         }
 
-        if (!read_a_bit()) {
-            trace() << "!read_a_bit 2\n";
-            set_error();
+        if (!readSome()) {
+            trace() << "!readSome 2\n";
+            setError();
             return false;
         }
     }
@@ -1302,28 +1305,28 @@ MsgChannel::wait_for_msg(int timeout)
 }
 
 Msg
-MsgChannel::get_msg(int timeout, bool eofAllowed)
+MsgChannel::getMsg(int timeout, bool eofAllowed)
 {
-    if (!wait_for_msg(timeout)) {
-        // trace() << "!wait_for_msg()\n";
+    if (!waitMsg(timeout)) {
+        // trace() << "!waitMsg()\n";
         return ext::monostate{};
     }
 
     /* If we've seen the EOF, and we don't have a complete message,
        then we won't see it anymore.  Return that to the caller.
-       Don't use has_msg() here, as it returns true for eof.  */
-    if (at_eof()) {
+       Don't use hasMsg() here, as it returns true for eof.  */
+    if (eof()) {
         if (!eofAllowed) {
             trace() << "saw eof without complete msg! " << instate << std::endl;
-            set_error();
+            setError();
         }
         return ext::monostate{};
     }
 
-    if (!has_msg()) {
-        trace() << "saw eof without msg! " << eof << " " << instate
+    if (!hasMsg()) {
+        trace() << "saw eof without msg! " << eof_ << " " << instate
                 << std::endl;
-        set_error();
+        setError();
         return ext::monostate{};
     }
 
@@ -1337,7 +1340,7 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
     static const std::unordered_map<MsgType, std::function<Msg()>> msg_map{
         {M::UNKNOWN,
          [this] {
-             set_error();
+             setError();
              return ext::monostate{};
          }},
         {M::PING, [] { return PingMsg{}; }},
@@ -1373,7 +1376,7 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
         {M::TIMEOUT, [] { return ext::monostate{}; }}};
     auto it = msg_map.find(type);
     if (it == msg_map.end()) {
-        set_error();
+        setError();
         return ext::monostate{};
     }
 
@@ -1382,11 +1385,11 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
     bool fail = ext::visit(make_visitor(
                                [this](ext::monostate & /*unused*/) {
                                    trace() << "no message type" << std::endl;
-                                   set_error();
+                                   setError();
                                    return true;
                                },
                                [this](auto & m) {
-                                   m.fill_from_channel(this);
+                                   m.fillFromChannel(this);
                                    return false;
                                }),
                            msg);
@@ -1399,36 +1402,36 @@ MsgChannel::get_msg(int timeout, bool eofAllowed)
         log_error()
             << "internal error - message not read correctly, message size "
             << inmsglen << " read " << (intogo - intogo_old) << std::endl;
-        set_error();
+        setError();
         return ext::monostate{};
     }
 
     instate = NEED_LEN;
-    update_state();
+    updateState();
 
     return msg;
 }
 
 bool
-MsgChannel::send_msg(const Msg & msg, int flags)
+MsgChannel::sendMsg(const Msg & msg, int flags)
 {
     if (instate == ERROR) {
         return false;
     }
-    if (instate == NEED_PROTO && !wait_for_protocol()) {
+    if (instate == NEED_PROTO && !waitProtocol()) {
         return false;
     }
 
-    chop_output();
+    chopOutput();
     size_t msgtogo_old = msgtogo;
 
     // Length placeholder
-    *this << (uint32_t)0;
+    *this << static_cast<uint32_t>(0);
 
     bool fail = ext::visit(make_visitor(
                                [this](const ext::monostate & /*unused*/) {
                                    trace() << "no message type" << std::endl;
-                                   set_error();
+                                   setError();
                                    return true;
                                },
                                [this](const auto & m) {
@@ -1437,7 +1440,7 @@ MsgChannel::send_msg(const Msg & msg, int flags)
                                    *this << static_cast<uint32_t>(
                                        icecream::type_id<T>());
 
-                                   m.send_to_channel(this);
+                                   m.sendToChannel(this);
                                    return false;
                                }),
                            msg);
@@ -1445,22 +1448,22 @@ MsgChannel::send_msg(const Msg & msg, int flags)
         return false;
     }
 
-    uint32_t out_len = msgtogo - msgtogo_old - 4;
+    const uint32_t out_len = msgtogo - msgtogo_old - 4;
     if (out_len > MAX_MSG_SIZE) {
         log_error()
             << "internal error - size of message to write exceeds max size:"
             << out_len << std::endl;
-        set_error();
+        setError();
         return false;
     }
-    uint32_t len = htonl(out_len);
-    memcpy(msgbuf + msgtogo_old, &len, 4);
+    const uint32_t len = htonl(out_len);
+    std::memcpy(msgbuf + msgtogo_old, &len, 4);
 
     if ((flags & SendBulkOnly) && msgtogo < 4096) {
         return true;
     }
 
-    return flush_writebuf((flags & SendBlocking));
+    return flushWritebuf((flags & SendBlocking));
 }
 
 void
@@ -1479,7 +1482,7 @@ Broadcasts::broadcastSchedulerVersion(int          scheduler_port,
     buf[2] = 'E';
     buf[3] = PROTOCOL_VERSION;
     uint64_t tmp_time = starttime;
-    memcpy(&buf[4], &tmp_time, sizeof(uint64_t));
+    std::memcpy(&buf[4], &tmp_time, sizeof(uint64_t));
     buf[4 + sizeof(uint64_t)] = length_netname;
     strncpy(&buf[5 + sizeof(uint64_t)], netname, length_netname - 1);
     buf[schedbuflen - 1] = '\0';
@@ -1495,8 +1498,8 @@ Broadcasts::broadcastSchedulerVersion(int          scheduler_port,
     uint32_t tmp_time_high = uint64_t(starttime) >> 32;
     tmp_time_low = htonl(tmp_time_low);
     tmp_time_high = htonl(tmp_time_high);
-    memcpy(&buf[4], &tmp_time_high, sizeof(uint32_t));
-    memcpy(&buf[4 + sizeof(uint32_t)], &tmp_time_low, sizeof(uint32_t));
+    std::memcpy(&buf[4], &tmp_time_high, sizeof(uint32_t));
+    std::memcpy(&buf[4 + sizeof(uint32_t)], &tmp_time_low, sizeof(uint32_t));
     const int OFFSET = 4 + 2 * sizeof(uint32_t);
     snprintf(&buf[OFFSET], BROAD_BUFLEN - OFFSET, "%s", netname);
     buf[BROAD_BUFLEN - 1] = 0;
@@ -1506,8 +1509,9 @@ Broadcasts::broadcastSchedulerVersion(int          scheduler_port,
 bool
 Broadcasts::isSchedulerVersion(const char * buf, int buflen)
 {
-    if (buflen != BROAD_BUFLEN)
+    if (buflen != BROAD_BUFLEN) {
         return false;
+    }
     // Ignore versions older than 38, they are older than us anyway, so not
     // interesting.
     return buf[0] == 'I' && buf[1] == 'C' && buf[2] == 'F';
@@ -1522,19 +1526,24 @@ Broadcasts::getSchedulerVersionData(const char *  buf,
     assert(isSchedulerVersion(buf, BROAD_BUFLEN));
     const unsigned char other_scheduler_protocol = buf[3];
     uint32_t            tmp_time_low, tmp_time_high;
-    memcpy(&tmp_time_high, buf + 4, sizeof(uint32_t));
-    memcpy(&tmp_time_low, buf + 4 + sizeof(uint32_t), sizeof(uint32_t));
+    std::memcpy(&tmp_time_high, buf + 4, sizeof(uint32_t));
+    std::memcpy(&tmp_time_low, buf + 4 + sizeof(uint32_t), sizeof(uint32_t));
     tmp_time_low = ntohl(tmp_time_low);
     tmp_time_high = ntohl(tmp_time_high);
     time_t other_time = (uint64_t(tmp_time_high) << 32) | tmp_time_low;
-    ;
-    std::string recv_netname = std::string(buf + 4 + 2 * sizeof(uint32_t));
-    if (protocol != nullptr)
+
+    std::string recv_netname(buf + 4 + 2 * sizeof(uint32_t));
+    if (protocol != nullptr) {
         *protocol = other_scheduler_protocol;
-    if (time != nullptr)
+    }
+
+    if (time != nullptr) {
         *time = other_time;
-    if (netname != nullptr)
+    }
+
+    if (netname != nullptr) {
         *netname = recv_netname;
+    }
 }
 
 void
@@ -1600,7 +1609,7 @@ DiscoverSched::DiscoverSched(const std::string & _netname,
 
     if (!schedname.empty()) {
         netname = ""; // take whatever the machine is giving us
-        attempt_scheduler_connect();
+        attemptSchedulerConnect();
     } else {
         sendSchedulerDiscovery(PROTOCOL_VERSION);
     }
@@ -1621,13 +1630,13 @@ DiscoverSched::~DiscoverSched()
 }
 
 bool
-DiscoverSched::timed_out()
+DiscoverSched::timedOut()
 {
     return (time(nullptr) - time0 >= timeout);
 }
 
 void
-DiscoverSched::attempt_scheduler_connect()
+DiscoverSched::attemptSchedulerConnect()
 {
     time0 = time(nullptr) + MAX_SCHEDULER_PONG;
     log_info() << "scheduler is on " << schedname << ":" << sport << " (net "
@@ -1675,49 +1684,51 @@ DiscoverSched::prepareBroadcastReply(char *       buf,
 {
     if (buf[0] < 33) { // old client
         buf[0]++;
-        memset(buf + 1, 0, BROAD_BUFLEN_OLD_1 - 1);
+        std::memset(buf + 1, 0, BROAD_BUFLEN_OLD_1 - 1);
         snprintf(buf + 1, BROAD_BUFLEN_OLD_1 - 1, "%s", netname);
         buf[BROAD_BUFLEN_OLD_1 - 1] = 0;
         return BROAD_BUFLEN_OLD_1;
     } else if (buf[0] < 36) {
         // This is like 36, but 36 silently changed the size of BROAD_BUFLEN
-        // from 32 to 268. Since get_broad_answer() explicitly null-terminates
+        // from 32 to 268. Since getBroadAnswer() explicitly null-terminates
         // the data, this wouldn't lead to those receivers reading a shorter
         // std::string that would not be null-terminated, but still, this is
         // what versions 33-35 actually worked with.
         buf[0] += 2;
-        memset(buf + 1, 0, BROAD_BUFLEN_OLD_2 - 1);
+        std::memset(buf + 1, 0, BROAD_BUFLEN_OLD_2 - 1);
         uint32_t tmp_version = PROTOCOL_VERSION;
         uint64_t tmp_time = starttime;
-        memcpy(buf + 1, &tmp_version, sizeof(uint32_t));
-        memcpy(buf + 1 + sizeof(uint32_t), &tmp_time, sizeof(uint64_t));
+        std::memcpy(buf + 1, &tmp_version, sizeof(uint32_t));
+        std::memcpy(buf + 1 + sizeof(uint32_t), &tmp_time, sizeof(uint64_t));
         const int OFFSET = 1 + sizeof(uint32_t) + sizeof(uint64_t);
         snprintf(buf + OFFSET, BROAD_BUFLEN_OLD_2 - OFFSET, "%s", netname);
         buf[BROAD_BUFLEN_OLD_2 - 1] = 0;
         return BROAD_BUFLEN_OLD_2;
     } else if (buf[0] < 38) { // exposes endianess because of not using htonl()
         buf[0] += 2;
-        memset(buf + 1, 0, BROAD_BUFLEN - 1);
+        std::memset(buf + 1, 0, BROAD_BUFLEN - 1);
         uint32_t tmp_version = PROTOCOL_VERSION;
         uint64_t tmp_time = starttime;
-        memcpy(buf + 1, &tmp_version, sizeof(uint32_t));
-        memcpy(buf + 1 + sizeof(uint32_t), &tmp_time, sizeof(uint64_t));
+        std::memcpy(buf + 1, &tmp_version, sizeof(uint32_t));
+        std::memcpy(buf + 1 + sizeof(uint32_t), &tmp_time, sizeof(uint64_t));
         const int OFFSET = 1 + sizeof(uint32_t) + sizeof(uint64_t);
         snprintf(buf + OFFSET, BROAD_BUFLEN - OFFSET, "%s", netname);
         buf[BROAD_BUFLEN - 1] = 0;
         return BROAD_BUFLEN;
     } else { // latest version
         buf[0] += 3;
-        memset(buf + 1, 0, BROAD_BUFLEN - 1);
+        std::memset(buf + 1, 0, BROAD_BUFLEN - 1);
         uint32_t tmp_version = PROTOCOL_VERSION;
         uint32_t tmp_time_low = starttime & 0xffffffffUL;
         uint32_t tmp_time_high = uint64_t(starttime) >> 32;
         tmp_version = htonl(tmp_version);
         tmp_time_low = htonl(tmp_time_low);
         tmp_time_high = htonl(tmp_time_high);
-        memcpy(buf + 1, &tmp_version, sizeof(uint32_t));
-        memcpy(buf + 1 + sizeof(uint32_t), &tmp_time_high, sizeof(uint32_t));
-        memcpy(buf + 1 + 2 * sizeof(uint32_t), &tmp_time_low, sizeof(uint32_t));
+        std::memcpy(buf + 1, &tmp_version, sizeof(uint32_t));
+        std::memcpy(
+            buf + 1 + sizeof(uint32_t), &tmp_time_high, sizeof(uint32_t));
+        std::memcpy(
+            buf + 1 + 2 * sizeof(uint32_t), &tmp_time_low, sizeof(uint32_t));
         const int OFFSET = 1 + 3 * sizeof(uint32_t);
         snprintf(buf + OFFSET, BROAD_BUFLEN - OFFSET, "%s", netname);
         buf[BROAD_BUFLEN - 1] = 0;
@@ -1726,60 +1737,66 @@ DiscoverSched::prepareBroadcastReply(char *       buf,
 }
 
 void
-DiscoverSched::get_broad_data(const char *  buf,
-                              const char ** name,
-                              int *         version,
-                              time_t *      start_time)
+DiscoverSched::getBroadData(const char *  buf,
+                            const char ** out_name,
+                            int *         out_version,
+                            time_t *      out_start_time)
 {
     if (buf[0] == PROTOCOL_VERSION + 1) {
         // Scheduler version 32 or older, didn't send us its version, assume
         // it's 32.
-        if (name != nullptr)
-            *name = buf + 1;
-        if (version != nullptr)
-            *version = 32;
-        if (start_time != nullptr)
-            *start_time = 0; // Unknown too.
+        if (out_name != nullptr) {
+            *out_name = buf + 1;
+        }
+
+        if (out_version != nullptr) {
+            *out_version = 32;
+        }
+
+        if (out_start_time != nullptr) {
+            *out_start_time = 0; // Unknown too.
+        }
     } else if (buf[0] == PROTOCOL_VERSION + 2) {
-        if (version != nullptr) {
+        if (out_version != nullptr) {
             uint32_t tmp_version;
-            memcpy(&tmp_version, buf + 1, sizeof(uint32_t));
-            *version = tmp_version;
+            std::memcpy(&tmp_version, buf + 1, sizeof(uint32_t));
+            *out_version = tmp_version;
         }
-        if (start_time != nullptr) {
+        if (out_start_time != nullptr) {
             uint64_t tmp_time;
-            memcpy(&tmp_time, buf + 1 + sizeof(uint32_t), sizeof(uint64_t));
-            *start_time = tmp_time;
+            std::memcpy(
+                &tmp_time, buf + 1 + sizeof(uint32_t), sizeof(uint64_t));
+            *out_start_time = tmp_time;
         }
-        if (name != nullptr)
-            *name = buf + 1 + sizeof(uint32_t) + sizeof(uint64_t);
+        if (out_name != nullptr)
+            *out_name = buf + 1 + sizeof(uint32_t) + sizeof(uint64_t);
     } else if (buf[0] == PROTOCOL_VERSION + 3) {
-        if (version != nullptr) {
+        if (out_version != nullptr) {
             uint32_t tmp_version;
-            memcpy(&tmp_version, buf + 1, sizeof(uint32_t));
-            *version = ntohl(tmp_version);
+            std::memcpy(&tmp_version, buf + 1, sizeof(uint32_t));
+            *out_version = ntohl(tmp_version);
         }
-        if (start_time != nullptr) {
+        if (out_start_time != nullptr) {
             uint32_t tmp_time_low, tmp_time_high;
-            memcpy(
+            std::memcpy(
                 &tmp_time_high, buf + 1 + sizeof(uint32_t), sizeof(uint32_t));
-            memcpy(&tmp_time_low,
-                   buf + 1 + 2 * sizeof(uint32_t),
-                   sizeof(uint32_t));
+            std::memcpy(&tmp_time_low,
+                        buf + 1 + 2 * sizeof(uint32_t),
+                        sizeof(uint32_t));
             tmp_time_low = ntohl(tmp_time_low);
             tmp_time_high = ntohl(tmp_time_high);
-            *start_time = (uint64_t(tmp_time_high) << 32) | tmp_time_low;
-            ;
+            *out_start_time = (uint64_t(tmp_time_high) << 32) | tmp_time_low;
         }
-        if (name != nullptr)
-            *name = buf + 1 + 3 * sizeof(uint32_t);
+        if (out_name != nullptr) {
+            *out_name = buf + 1 + 3 * sizeof(uint32_t);
+        }
     } else {
         abort();
     }
 }
 
 MsgChannel *
-DiscoverSched::try_get_scheduler()
+DiscoverSched::tryGetScheduler()
 {
     if (schedname.empty()) {
         socklen_t remote_len;
@@ -1800,21 +1817,21 @@ DiscoverSched::try_get_scheduler()
         */
 
         /* Read/test all packages arrived until now.  */
-        while (get_broad_answer(ask_fd,
-                                0 /*timeout*/,
-                                buf2,
-                                (struct sockaddr_in *)&remote_addr,
-                                &remote_len) ||
+        while (getBroadAnswer(ask_fd,
+                              0 /*timeout*/,
+                              buf2,
+                              (struct sockaddr_in *)&remote_addr,
+                              &remote_len) ||
                (ask_second_fd != -1 &&
-                get_broad_answer(ask_second_fd,
-                                 0 /*timeout*/,
-                                 buf2,
-                                 (struct sockaddr_in *)&remote_addr,
-                                 &remote_len))) {
+                getBroadAnswer(ask_second_fd,
+                               0 /*timeout*/,
+                               buf2,
+                               (struct sockaddr_in *)&remote_addr,
+                               &remote_len))) {
             int          version;
             time_t       start_time;
             const char * name;
-            get_broad_data(buf2, &name, &version, &start_time);
+            getBroadData(buf2, &name, &version, &start_time);
             if (strcasecmp(netname.c_str(), name) == 0) {
                 if (version >= 128 || version < 1) {
                     log_warning() << "Ignoring bogus version " << version
@@ -1851,7 +1868,7 @@ DiscoverSched::try_get_scheduler()
             }
         }
 
-        if (timed_out()) {
+        if (timedOut()) {
             if (best_version == 0) {
                 return nullptr;
             }
@@ -1873,7 +1890,7 @@ DiscoverSched::try_get_scheduler()
             } else {
                 assert(ask_second_fd == -1);
             }
-            attempt_scheduler_connect();
+            attemptSchedulerConnect();
 
             if (ask_fd >= 0) {
                 int status = connect(ask_fd,
@@ -1908,11 +1925,11 @@ DiscoverSched::try_get_scheduler()
 }
 
 bool
-DiscoverSched::get_broad_answer(int                  ask_fd,
-                                int                  timeout,
-                                char *               buf2,
-                                struct sockaddr_in * remote_addr,
-                                socklen_t *          remote_len)
+DiscoverSched::getBroadAnswer(int                  ask_fd,
+                              int                  timeout,
+                              char *               buf2,
+                              struct sockaddr_in * remote_addr,
+                              socklen_t *          remote_len)
 {
     char   buf = PROTOCOL_VERSION;
     pollfd pfd;
@@ -1940,7 +1957,7 @@ DiscoverSched::get_broad_answer(int                  ask_fd,
                        remote_len);
     if (len != BROAD_BUFLEN && len != BROAD_BUFLEN_OLD_1 &&
         len != BROAD_BUFLEN_OLD_2) {
-        log_perror("get_broad_answer recvfrom()");
+        log_perror("getBroadAnswer recvfrom()");
         return false;
     }
 
@@ -1982,13 +1999,13 @@ DiscoverSched::getNetnames(int timeout, int port)
 
         /* Read/test all arriving packages.  */
         while (
-            get_broad_answer(
+            getBroadAnswer(
                 ask_fd, first ? timeout : 0, buf2, &remote_addr, &remote_len) &&
             time(nullptr) < timeout_time) {
             first = false;
             const char * name;
-            get_broad_data(buf2, &name, nullptr, nullptr);
-            l.push_back(name);
+            getBroadData(buf2, &name, nullptr, nullptr);
+            l.emplace_back(name);
         }
     } while (time(nullptr) - time0 < (timeout / 1000));
 
@@ -2035,10 +2052,9 @@ GetCSMsg::GetCSMsg(const Environments & envs,
 }
 
 void
-GetCSMsg::fill_from_channel(MsgChannel * c)
+GetCSMsg::fillFromChannel(MsgChannel * c)
 {
-
-    c->read_environments(versions);
+    c->readEnvironments(versions);
     *c >> filename;
     uint32_t _lang;
     *c >> _lang;
@@ -2084,12 +2100,11 @@ GetCSMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-GetCSMsg::send_to_channel(MsgChannel * c) const
+GetCSMsg::sendToChannel(MsgChannel * c) const
 {
-
-    c->write_environments(versions);
+    c->writeEnvironments(versions);
     *c << shorten_filename(filename);
-    *c << (uint32_t)lang;
+    *c << static_cast<uint32_t>(lang);
     *c << count;
     *c << target;
     *c << arg_flags;
@@ -2118,9 +2133,8 @@ GetCSMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-UseCSMsg::fill_from_channel(MsgChannel * c)
+UseCSMsg::fillFromChannel(MsgChannel * c)
 {
-
     *c >> job_id;
     *c >> port;
     *c >> hostname;
@@ -2136,9 +2150,8 @@ UseCSMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-UseCSMsg::send_to_channel(MsgChannel * c) const
+UseCSMsg::sendToChannel(MsgChannel * c) const
 {
-
     *c << job_id;
     *c << port;
     *c << hostname;
@@ -2152,25 +2165,22 @@ UseCSMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-NoCSMsg::fill_from_channel(MsgChannel * c)
+NoCSMsg::fillFromChannel(MsgChannel * c)
 {
-
     *c >> job_id;
     *c >> client_id;
 }
 
 void
-NoCSMsg::send_to_channel(MsgChannel * c) const
+NoCSMsg::sendToChannel(MsgChannel * c) const
 {
-
     *c << job_id;
     *c << client_id;
 }
 
 void
-CompileFileMsg::fill_from_channel(MsgChannel * c)
+CompileFileMsg::fillFromChannel(MsgChannel * c)
 {
-
     uint32_t    id, lang;
     std::string version;
     *c >> lang;
@@ -2179,19 +2189,21 @@ CompileFileMsg::fill_from_channel(MsgChannel * c)
     if (IS_PROTOCOL_41(c)) {
         std::list<std::string> largs;
         *c >> largs;
-        // Whe compiling remotely, we no longer care about the Arg_Remote vs
-        // Arg_Rest difference, so treat them all as Arg_Remote.
-        for (auto it = largs.begin(); it != largs.end(); ++it)
-            l.append(*it, Arg_Remote);
+        // Whe compiling remotely, we no longer care about the
+        // ArgumentType::REMOTE vs ArgumentType::REST difference, so treat them
+        // all as ArgumentType::REMOTE.
+        for (auto it = largs.begin(); it != largs.end(); ++it) {
+            l.append(*it, ArgumentType::REMOTE);
+        }
     } else {
         std::list<std::string> _l1, _l2;
         *c >> _l1;
         *c >> _l2;
         for (auto it = _l1.begin(); it != _l1.end(); ++it) {
-            l.append(*it, Arg_Remote);
+            l.append(*it, ArgumentType::REMOTE);
         }
         for (auto it = _l2.begin(); it != _l2.end(); ++it) {
-            l.append(*it, Arg_Rest);
+            l.append(*it, ArgumentType::REST);
         }
     }
     *c >> version;
@@ -2229,16 +2241,15 @@ CompileFileMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-CompileFileMsg::send_to_channel(MsgChannel * c) const
+CompileFileMsg::sendToChannel(MsgChannel * c) const
 {
-
-    *c << (uint32_t)job->language();
+    *c << static_cast<uint32_t>(job->language());
     *c << job->jobID();
 
     if (IS_PROTOCOL_41(c)) {
-        // By the time we're compiling, the args are all Arg_Remote or Arg_Rest
-        // and we no longer care about the differences, but we may care about
-        // the ordering. So keep them all in one list.
+        // By the time we're compiling, the args are all ArgumentType::REMOTE or
+        // ArgumentType::REST and we no longer care about the differences, but
+        // we may care about the ordering. So keep them all in one list.
         *c << job->nonLocalFlags();
     } else {
         if (IS_PROTOCOL_30(c)) {
@@ -2247,7 +2258,7 @@ CompileFileMsg::send_to_channel(MsgChannel * c) const
             if (job->compilerName().find("clang") != std::string::npos) {
                 // Hack for compilerwrapper.
                 std::list<std::string> flags = job->remoteFlags();
-                flags.push_front("clang");
+                flags.emplace_front("clang");
                 *c << flags;
             } else {
                 *c << job->remoteFlags();
@@ -2260,7 +2271,7 @@ CompileFileMsg::send_to_channel(MsgChannel * c) const
     *c << job->targetPlatform();
 
     if (IS_PROTOCOL_30(c)) {
-        *c << remote_compiler_name();
+        *c << remoteCompilerName();
     }
     if (IS_PROTOCOL_34(c)) {
         *c << job->inputFile();
@@ -2268,7 +2279,7 @@ CompileFileMsg::send_to_channel(MsgChannel * c) const
     }
     if (IS_PROTOCOL_35(c)) {
         *c << job->outputFile();
-        *c << (uint32_t)job->dwarfFissionEnabled();
+        *c << static_cast<uint32_t>(job->dwarfFissionEnabled());
     }
 }
 
@@ -2277,7 +2288,7 @@ CompileFileMsg::send_to_channel(MsgChannel * c) const
 // be g++ (before protocol version 30 remote CS even had /usr/bin/{gcc|g++}
 // hardcoded).  For clang, the binary is just clang for both C/C++.
 std::string
-CompileFileMsg::remote_compiler_name() const
+CompileFileMsg::remoteCompilerName() const
 {
     if (job->compilerName().find("clang") != std::string::npos) {
         return "clang";
@@ -2287,7 +2298,7 @@ CompileFileMsg::remote_compiler_name() const
 }
 
 void
-FileChunkMsg::fill_from_channel(MsgChannel * c)
+FileChunkMsg::fillFromChannel(MsgChannel * c)
 {
     buffer.clear();
 
@@ -2295,13 +2306,13 @@ FileChunkMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-FileChunkMsg::send_to_channel(MsgChannel * c) const
+FileChunkMsg::sendToChannel(MsgChannel * c) const
 {
     c->writecompressed(buffer.data(), buffer.size(), compressed);
 }
 
 void
-CompileResultMsg::fill_from_channel(MsgChannel * c)
+CompileResultMsg::fillFromChannel(MsgChannel * c)
 {
     uint32_t _status = 0;
     *c >> err;
@@ -2319,19 +2330,19 @@ CompileResultMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-CompileResultMsg::send_to_channel(MsgChannel * c) const
+CompileResultMsg::sendToChannel(MsgChannel * c) const
 {
     *c << err;
     *c << out;
     *c << status;
-    *c << (uint32_t)was_out_of_memory;
+    *c << static_cast<uint32_t>(was_out_of_memory);
     if (IS_PROTOCOL_35(c)) {
-        *c << (uint32_t)have_dwo_file;
+        *c << static_cast<uint32_t>(have_dwo_file);
     }
 }
 
 void
-JobBeginMsg::fill_from_channel(MsgChannel * c)
+JobBeginMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> job_id;
     *c >> stime;
@@ -2341,7 +2352,7 @@ JobBeginMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-JobBeginMsg::send_to_channel(MsgChannel * c) const
+JobBeginMsg::sendToChannel(MsgChannel * c) const
 {
     *c << job_id;
     *c << stime;
@@ -2351,7 +2362,7 @@ JobBeginMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-JobLocalBeginMsg::fill_from_channel(MsgChannel * c)
+JobLocalBeginMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> stime;
     *c >> outfile;
@@ -2359,7 +2370,7 @@ JobLocalBeginMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-JobLocalBeginMsg::send_to_channel(MsgChannel * c) const
+JobLocalBeginMsg::sendToChannel(MsgChannel * c) const
 {
     *c << stime;
     *c << outfile;
@@ -2367,13 +2378,13 @@ JobLocalBeginMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-JobLocalDoneMsg::fill_from_channel(MsgChannel * c)
+JobLocalDoneMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> job_id;
 }
 
 void
-JobLocalDoneMsg::send_to_channel(MsgChannel * c) const
+JobLocalDoneMsg::sendToChannel(MsgChannel * c) const
 {
     *c << job_id;
 }
@@ -2395,7 +2406,7 @@ JobDoneMsg::JobDoneMsg(int          id,
 }
 
 void
-JobDoneMsg::fill_from_channel(MsgChannel * c)
+JobDoneMsg::fillFromChannel(MsgChannel * c)
 {
     uint32_t _exitcode = 255;
     *c >> job_id;
@@ -2421,13 +2432,13 @@ JobDoneMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-JobDoneMsg::send_to_channel(MsgChannel * c) const
+JobDoneMsg::sendToChannel(MsgChannel * c) const
 {
     *c << job_id;
     if (!IS_PROTOCOL_39(c) && (flags & UnknownJobId)) {
-        *c << (uint32_t)200;
+        *c << static_cast<uint32_t>(200);
     } else {
-        *c << (uint32_t)exitcode;
+        *c << static_cast<uint32_t>(exitcode);
     }
     *c << real_msec;
     *c << user_msec;
@@ -2444,14 +2455,14 @@ JobDoneMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-JobDoneMsg::set_unknown_job_client_id(uint32_t clientId)
+JobDoneMsg::setUnknownJobClientId(uint32_t clientId)
 {
     flags |= UnknownJobId;
     job_id = clientId;
 }
 
 uint32_t
-JobDoneMsg::unknown_job_client_id() const
+JobDoneMsg::unknownJobClientId() const
 {
     if (flags & UnknownJobId) {
         return job_id;
@@ -2460,10 +2471,10 @@ JobDoneMsg::unknown_job_client_id() const
 }
 
 void
-JobDoneMsg::set_job_id(uint32_t jobId)
+JobDoneMsg::setJobId(uint32_t jobId)
 {
     job_id = jobId;
-    flags &= ~(uint32_t)UnknownJobId;
+    flags &= ~static_cast<uint32_t>(UnknownJobId);
 }
 
 LoginMsg::LoginMsg(uint32_t            myport,
@@ -2487,11 +2498,11 @@ LoginMsg::LoginMsg(uint32_t            myport,
 }
 
 void
-LoginMsg::fill_from_channel(MsgChannel * c)
+LoginMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> port;
     *c >> max_kids;
-    c->read_environments(envs);
+    c->readEnvironments(envs);
     *c >> nodename;
     *c >> host_platform;
     uint32_t net_chroot_possible = 0;
@@ -2512,11 +2523,11 @@ LoginMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-LoginMsg::send_to_channel(MsgChannel * c) const
+LoginMsg::sendToChannel(MsgChannel * c) const
 {
     *c << port;
     *c << max_kids;
-    c->write_environments(envs);
+    c->writeEnvironments(envs);
     *c << nodename;
     *c << host_platform;
     *c << chroot_possible;
@@ -2530,7 +2541,7 @@ LoginMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-ConfCSMsg::fill_from_channel(MsgChannel * c)
+ConfCSMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> max_scheduler_pong;
     *c >> max_scheduler_ping;
@@ -2539,7 +2550,7 @@ ConfCSMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-ConfCSMsg::send_to_channel(MsgChannel * c) const
+ConfCSMsg::sendToChannel(MsgChannel * c) const
 {
     *c << max_scheduler_pong;
     *c << max_scheduler_ping;
@@ -2548,7 +2559,7 @@ ConfCSMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-StatsMsg::fill_from_channel(MsgChannel * c)
+StatsMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> load;
     *c >> loadAvg1;
@@ -2558,7 +2569,7 @@ StatsMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-StatsMsg::send_to_channel(MsgChannel * c) const
+StatsMsg::sendToChannel(MsgChannel * c) const
 {
     *c << load;
     *c << loadAvg1;
@@ -2568,7 +2579,7 @@ StatsMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-GetNativeEnvMsg::fill_from_channel(MsgChannel * c)
+GetNativeEnvMsg::fillFromChannel(MsgChannel * c)
 {
     if (IS_PROTOCOL_32(c)) {
         *c >> compiler;
@@ -2580,7 +2591,7 @@ GetNativeEnvMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-GetNativeEnvMsg::send_to_channel(MsgChannel * c) const
+GetNativeEnvMsg::sendToChannel(MsgChannel * c) const
 {
     if (IS_PROTOCOL_32(c)) {
         *c << compiler;
@@ -2591,33 +2602,33 @@ GetNativeEnvMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-UseNativeEnvMsg::fill_from_channel(MsgChannel * c)
+UseNativeEnvMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> nativeVersion;
 }
 
 void
-UseNativeEnvMsg::send_to_channel(MsgChannel * c) const
+UseNativeEnvMsg::sendToChannel(MsgChannel * c) const
 {
     *c << nativeVersion;
 }
 
 void
-EnvTransferMsg::fill_from_channel(MsgChannel * c)
+EnvTransferMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> name;
     *c >> target;
 }
 
 void
-EnvTransferMsg::send_to_channel(MsgChannel * c) const
+EnvTransferMsg::sendToChannel(MsgChannel * c) const
 {
     *c << name;
     *c << target;
 }
 
 void
-MonGetCSMsg::fill_from_channel(MsgChannel * c)
+MonGetCSMsg::fillFromChannel(MsgChannel * c)
 {
     if (IS_PROTOCOL_29(c)) {
         *c >> filename;
@@ -2625,7 +2636,7 @@ MonGetCSMsg::fill_from_channel(MsgChannel * c)
         *c >> _lang;
         lang = static_cast<CompileJob::Language>(_lang);
     } else {
-        GetCSMsg::fill_from_channel(c);
+        GetCSMsg::fillFromChannel(c);
     }
 
     *c >> job_id;
@@ -2633,13 +2644,13 @@ MonGetCSMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-MonGetCSMsg::send_to_channel(MsgChannel * c) const
+MonGetCSMsg::sendToChannel(MsgChannel * c) const
 {
     if (IS_PROTOCOL_29(c)) {
         *c << shorten_filename(filename);
-        *c << (uint32_t)lang;
+        *c << static_cast<uint32_t>(lang);
     } else {
-        GetCSMsg::send_to_channel(c);
+        GetCSMsg::sendToChannel(c);
     }
 
     *c << job_id;
@@ -2647,7 +2658,7 @@ MonGetCSMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-MonJobBeginMsg::fill_from_channel(MsgChannel * c)
+MonJobBeginMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> job_id;
     *c >> stime;
@@ -2655,7 +2666,7 @@ MonJobBeginMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-MonJobBeginMsg::send_to_channel(MsgChannel * c) const
+MonJobBeginMsg::sendToChannel(MsgChannel * c) const
 {
     *c << job_id;
     *c << stime;
@@ -2663,7 +2674,7 @@ MonJobBeginMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-MonLocalJobBeginMsg::fill_from_channel(MsgChannel * c)
+MonLocalJobBeginMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> hostid;
     *c >> job_id;
@@ -2672,7 +2683,7 @@ MonLocalJobBeginMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-MonLocalJobBeginMsg::send_to_channel(MsgChannel * c) const
+MonLocalJobBeginMsg::sendToChannel(MsgChannel * c) const
 {
     *c << hostid;
     *c << job_id;
@@ -2681,47 +2692,47 @@ MonLocalJobBeginMsg::send_to_channel(MsgChannel * c) const
 }
 
 void
-MonStatsMsg::fill_from_channel(MsgChannel * c)
+MonStatsMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> hostid;
     *c >> statmsg;
 }
 
 void
-MonStatsMsg::send_to_channel(MsgChannel * c) const
+MonStatsMsg::sendToChannel(MsgChannel * c) const
 {
     *c << hostid;
     *c << statmsg;
 }
 
 void
-StatusTextMsg::fill_from_channel(MsgChannel * c)
+StatusTextMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> text;
 }
 
 void
-StatusTextMsg::send_to_channel(MsgChannel * c) const
+StatusTextMsg::sendToChannel(MsgChannel * c) const
 {
     *c << text;
 }
 
 void
-VerifyEnvMsg::fill_from_channel(MsgChannel * c)
+VerifyEnvMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> environment;
     *c >> target;
 }
 
 void
-VerifyEnvMsg::send_to_channel(MsgChannel * c) const
+VerifyEnvMsg::sendToChannel(MsgChannel * c) const
 {
     *c << environment;
     *c << target;
 }
 
 void
-VerifyEnvResultMsg::fill_from_channel(MsgChannel * c)
+VerifyEnvResultMsg::fillFromChannel(MsgChannel * c)
 {
     uint32_t read_ok;
     *c >> read_ok;
@@ -2729,13 +2740,13 @@ VerifyEnvResultMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-VerifyEnvResultMsg::send_to_channel(MsgChannel * c) const
+VerifyEnvResultMsg::sendToChannel(MsgChannel * c) const
 {
     *c << uint32_t(ok);
 }
 
 void
-BlacklistHostEnvMsg::fill_from_channel(MsgChannel * c)
+BlacklistHostEnvMsg::fillFromChannel(MsgChannel * c)
 {
     *c >> environment;
     *c >> target;
@@ -2743,7 +2754,7 @@ BlacklistHostEnvMsg::fill_from_channel(MsgChannel * c)
 }
 
 void
-BlacklistHostEnvMsg::send_to_channel(MsgChannel * c) const
+BlacklistHostEnvMsg::sendToChannel(MsgChannel * c) const
 {
     *c << environment;
     *c << target;

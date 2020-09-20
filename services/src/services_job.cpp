@@ -27,14 +27,15 @@
 #include "logging.hh"
 #include "platform.hh"
 
-using namespace std;
+#include <algorithm>
+#include <iterator>
 
-list<string>
-CompileJob::flags(Argument_Type argumentType) const
+std::list<std::string>
+CompileJob::flags(ArgumentType argumentType) const
 {
-    list<string> args;
+    std::list<std::string> args;
 
-    for (const std::pair<std::string, Argument_Type> & m_flag : m_flags) {
+    for (const auto & m_flag : m_flags) {
         if (m_flag.second == argumentType) {
             args.push_back(m_flag.first);
         }
@@ -43,45 +44,45 @@ CompileJob::flags(Argument_Type argumentType) const
     return args;
 }
 
-list<string>
+std::list<std::string>
 CompileJob::localFlags() const
 {
-    return flags(Arg_Local);
+    return flags(ArgumentType::LOCAL);
 }
 
-list<string>
+std::list<std::string>
 CompileJob::remoteFlags() const
 {
-    return flags(Arg_Remote);
+    return flags(ArgumentType::REMOTE);
 }
 
-list<string>
+std::list<std::string>
 CompileJob::restFlags() const
 {
-    return flags(Arg_Rest);
+    return flags(ArgumentType::REST);
 }
 
-list<string>
+std::list<std::string>
 CompileJob::nonLocalFlags() const
 {
-    list<string> args;
+    std::list<std::string> args;
 
-    for (const std::pair<std::string, Argument_Type> & m_flag : m_flags) {
-        if (m_flag.second != Arg_Local) {
-            args.push_back(m_flag.first);
+    for (const auto & flag_entry : m_flags) {
+        if (flag_entry.second != ArgumentType::LOCAL) {
+            args.push_back(flag_entry.first);
         }
     }
 
     return args;
 }
 
-list<string>
+std::list<std::string>
 CompileJob::allFlags() const
 {
-    list<string> args;
+    std::list<std::string> args;
 
-    for (const std::pair<std::string, Argument_Type> & m_flag : m_flags) {
-        args.push_back(m_flag.first);
+    for (const auto & flag_entry : m_flags) {
+        args.push_back(flag_entry.first);
     }
 
     return args;
@@ -98,8 +99,8 @@ CompileJob::argumentFlags() const
 {
     unsigned int result = Flag_None;
 
-    for (const std::pair<std::string, Argument_Type> & m_flag : m_flags) {
-        const string arg = m_flag.first;
+    for (const auto & flag_entry : m_flags) {
+        const std::string & arg = flag_entry.first;
 
         if (arg.at(0) == '-') {
             if (arg.length() == 1) {

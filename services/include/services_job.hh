@@ -30,19 +30,21 @@
 #include <sstream>
 #include <string>
 
-typedef enum
+enum class ArgumentType : uint8_t
 {
-    Arg_Local, // Local-only args.
-    Arg_Remote, // Remote-only args.
-    Arg_Rest // Args to use both locally and remotely.
-} Argument_Type;
+    LOCAL, // Local-only args.
+    REMOTE, // Remote-only args.
+    REST // Args to use both locally and remotely.
+};
 
-class ArgumentsList : public std::list<std::pair<std::string, Argument_Type>> {
-public:
+struct ArgumentsList : public std::list<std::pair<std::string, ArgumentType>> {
+    template<typename T>
     void
-    append(std::string s, Argument_Type t)
+    append(T && s, ArgumentType t)
     {
-        push_back(make_pair(s, t));
+        emplace_back(std::piecewise_construct,
+                     std::forward_as_tuple(std::forward<T>(s)),
+                     std::forward_as_tuple(t));
     }
 };
 
@@ -207,7 +209,7 @@ struct CompileJob {
     }
 
     void
-    appendFlag(std::string arg, Argument_Type argumentType)
+    appendFlag(std::string arg, ArgumentType argumentType)
     {
         m_flags.append(arg, argumentType);
     }
@@ -240,7 +242,7 @@ struct CompileJob {
 
 private:
     std::list<std::string>
-    flags(Argument_Type argumentType) const;
+    flags(ArgumentType argumentType) const;
     void
     setTargetPlatform();
 

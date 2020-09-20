@@ -520,14 +520,14 @@ main(int argc, char ** argv)
                 env_compression = icecc_env_compression;
             trace() << "asking for native environment for " << compiler
                     << std::endl;
-            if (!local_daemon->send_msg(
+            if (!local_daemon->sendMsg(
                     GetNativeEnvMsg(compiler, extrafiles, env_compression))) {
                 log_warning()
                     << "failed to write get native environment" << std::endl;
                 local = true;
             } else {
                 // the timeout is high because it creates the native version
-                umsg = local_daemon->get_msg(4 * 60);
+                umsg = local_daemon->getMsg(4 * 60);
             }
 
             std::string native{};
@@ -583,7 +583,7 @@ main(int argc, char ** argv)
                and tell the scheduler - and that fail message may arrive earlier
                than the remote daemon's success msg. */
             if (ret == 0) {
-                local_daemon->send_msg(EndMsg());
+                local_daemon->sendMsg(EndMsg());
             }
         } catch (const RemoteError & error) {
             // log the 'local cpp invocation failed' message by default, so that
@@ -632,11 +632,11 @@ main(int argc, char ** argv)
         Msg           startme{};
 
         /* Inform the daemon that we like to start a job.  */
-        if (local_daemon->send_msg(
+        if (local_daemon->sendMsg(
                 JobLocalBeginMsg(0, get_absfilename(job.outputFile())))) {
             /* Now wait until the daemon gives us the start signal.  40 minutes
                should be enough for all normal compile or link jobs.  */
-            startme = local_daemon->get_msg(40 * 60);
+            startme = local_daemon->getMsg(40 * 60);
         }
 
         /* If we can't talk to the daemon anymore we need to fall back

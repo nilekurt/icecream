@@ -901,7 +901,7 @@ Daemon::send_scheduler(const Msg & msg)
         return false;
     }
 
-    if (!scheduler->send_msg(msg)) {
+    if (!scheduler->sendMsg(msg)) {
         log_error() << "sending message to scheduler failed.." << std::endl;
         close_scheduler();
         return false;
@@ -1142,7 +1142,7 @@ Daemon::scheduler_use_cs(const UseCSMsg & msg)
                                    1,
                                    msg.matched_job_id);
 
-        if (!c->channel->send_msg(msg)) {
+        if (!c->channel->sendMsg(msg)) {
             handle_end(c, 143);
             return 0;
         }
@@ -1578,7 +1578,7 @@ Daemon::handle_get_native_env(Client * client, const GetNativeEnvMsg & msg)
     if (stat(ccompiler.c_str(), &st) != 0) {
         log_error() << "Compiler binary " << ccompiler
                     << " for environment not found." << std::endl;
-        client->channel->send_msg(EndMsg());
+        client->channel->sendMsg(EndMsg());
         handle_end(client, 122);
         return false;
     }
@@ -1596,7 +1596,7 @@ Daemon::handle_get_native_env(Client * client, const GetNativeEnvMsg & msg)
         if (stat(it->c_str(), &st) != 0) {
             log_error() << "Extra file " << *it << " for environment not found."
                         << std::endl;
-            client->channel->send_msg(EndMsg());
+            client->channel->sendMsg(EndMsg());
             handle_end(client, 122);
             return false;
         }
@@ -1649,7 +1649,7 @@ Daemon::finish_get_native_env(Client * client, std::string env_key)
     assert(client->pending_create_env == env_key);
     UseNativeEnvMsg m(native_environments[env_key].name);
 
-    if (!client->channel->send_msg(m)) {
+    if (!client->channel->sendMsg(m)) {
         handle_end(client, 138);
         return false;
     }
@@ -1682,7 +1682,7 @@ Daemon::create_env_finished(std::string env_key)
             repeat = false;
             for (auto it = clients.begin(); it != clients.end(); ++it) {
                 if (it->second->pending_create_env == env_key) {
-                    it->second->channel->send_msg(EndMsg());
+                    it->second->channel->sendMsg(EndMsg());
                     handle_end(it->second, 121);
                     // The handle_end call invalidates our iterator, so break
                     // out of the loop, but try again just in case, until
@@ -1717,7 +1717,7 @@ Daemon::handle_job_done(Client * cl, const JobDoneMsg & msg)
     trace() << "handle_job_done " << msg.job_id << " " << msg.exitcode
             << std::endl;
 
-    if (!msg.is_from_server() &&
+    if (!msg.isFromServer() &&
         (msg.user_msec + msg.sys_msec) <= msg.real_msec) {
         icecream_load += (msg.user_msec + msg.sys_msec) / num_cpus;
     }
@@ -1742,7 +1742,7 @@ Daemon::handle_old_request()
         if (client) {
             trace() << "send JobLocalBeginMsg to client" << std::endl;
 
-            if (!client->channel->send_msg(JobLocalBeginMsg())) {
+            if (!client->channel->sendMsg(JobLocalBeginMsg())) {
                 log_warning()
                     << "can't send start message to client" << std::endl;
                 handle_end(client, 112);
@@ -1766,7 +1766,7 @@ Daemon::handle_old_request()
         if (client) {
             trace() << "pending " << client->dump() << std::endl;
 
-            if (client->channel->send_msg(*client->usecsmsg)) {
+            if (client->channel->sendMsg(*client->usecsmsg)) {
                 client->status = Client::CLIENTWORK;
                 /* we make sure we reserve a spot and the rest is done if the
                  * client contacts as back with a Compile request */
@@ -1919,7 +1919,7 @@ Daemon::handle_verify_env(Client * client, const VerifyEnvMsg & msg)
             << std::endl;
     VerifyEnvResultMsg resultmsg(ok);
 
-    if (!client->channel->send_msg(resultmsg)) {
+    if (!client->channel->sendMsg(resultmsg)) {
         log_error() << "sending verify end result failed.." << std::endl;
         return false;
     }
@@ -2017,12 +2017,12 @@ Daemon::handle_end(Client * client, int exitcode)
                     break;
             }
 
-            trace() << "scheduler->send_msg( JobDoneMsg( " << client->dump()
+            trace() << "scheduler->sendMsg(JobDoneMsg(" << client->dump()
                     << ", " << exitcode << "))\n";
 
             JobDoneMsg msg(job_id, exitcode, flag, clients.size());
             if (use_client_id) {
-                msg.set_unknown_job_client_id(client->client_id);
+                msg.setUnknownJobClientId(client->client_id);
             }
             if (!send_scheduler(msg)) {
                 trace() << "failed to reach scheduler for remote job done msg!"
@@ -2030,7 +2030,7 @@ Daemon::handle_end(Client * client, int exitcode)
             }
         } else if (client->status == Client::CLIENTWORK) {
             // Clientwork && !job_id == LINK
-            trace() << "scheduler->send_msg( JobLocalDoneMsg( "
+            trace() << "scheduler->sendMsg(JobLocalDoneMsg("
                     << client->client_id << ") );\n";
 
             if (!send_scheduler(JobLocalDoneMsg(client->client_id))) {
@@ -2115,7 +2115,7 @@ Daemon::handle_activity(Client * client)
     assert(client->status != Client::TOCOMPILE &&
            client->status != Client::WAITINSTALL);
 
-    auto msg = client->channel->get_msg(0, true);
+    auto msg = client->channel->getMsg(0, true);
 
     if (ext::holds_alternative<ext::monostate>(msg)) {
         handle_end(client, 118);
@@ -2158,7 +2158,7 @@ Daemon::handle_activity(Client * client)
             [this, client](auto & m) {
                 log_error() << "protocol error " << message_type(m)
                             << " on client " << client->dump() << std::endl;
-                client->channel->send_msg(EndMsg{});
+                client->channel->sendMsg(EndMsg{});
                 handle_end(client, 120);
 
                 return false;
@@ -2229,7 +2229,7 @@ Daemon::answer_client_requests()
            to read, we will read them and save it for the child; otherwise the
            write on the client side would be blocked */
         if (current_status == Client::TOCOMPILE ||
-            (!ignore_channel && (!c->has_msg() || handle_activity(client)))) {
+            (!ignore_channel && (!c->hasMsg() || handle_activity(client)))) {
             pfd.fd = i;
             pfd.events = POLLIN;
             pollfds.push_back(pfd);
@@ -2249,11 +2249,11 @@ Daemon::answer_client_requests()
         pfd.fd = scheduler->fd;
         pfd.events = POLLIN;
         pollfds.push_back(pfd);
-    } else if (discover && discover->listen_fd() >= 0) {
+    } else if (discover && discover->listenFd() >= 0) {
         /* We don't explicitely check for discover->get_fd() being in
         the selected set below.  If it's set, we simply will return
         and our call will make sure we try to get the scheduler.  */
-        pfd.fd = discover->listen_fd();
+        pfd.fd = discover->listenFd();
         pfd.events = POLLIN;
         pollfds.push_back(pfd);
     }
@@ -2286,8 +2286,8 @@ Daemon::answer_client_requests()
         bool had_scheduler = scheduler;
 
         if (scheduler && pollfd_is_set(pollfds, scheduler->fd, POLLIN)) {
-            while (!scheduler->read_a_bit() || scheduler->has_msg()) {
-                auto msg = scheduler->get_msg(0, true);
+            while (!scheduler->readSome() || scheduler->hasMsg()) {
+                auto msg = scheduler->getMsg(0, true);
 
                 if (ext::holds_alternative<ext::monostate>(msg)) {
                     log_warning() << "scheduler closed connection" << std::endl;
@@ -2373,7 +2373,7 @@ Daemon::answer_client_requests()
             trace() << "accepted " << c->fd << " " << c->name << " as "
                     << client->client_id << std::endl;
 
-            while (!c->read_a_bit() || c->has_msg()) {
+            while (!c->readSome() || c->hasMsg()) {
                 if (!handle_activity(client)) {
                     break;
                 }
@@ -2414,12 +2414,12 @@ Daemon::answer_client_requests()
                            process it and leave it to the child if we didn't
                            read it now, the client would be blocked and timed
                            out */
-                        c->read_a_bit();
+                        c->readSome();
                     } else {
                         assert(client->status != Client::TOCOMPILE &&
                                client->status != Client::WAITINSTALL);
 
-                        while (!c->read_a_bit() || c->has_msg()) {
+                        while (!c->readSome() || c->hasMsg()) {
                             if (!handle_activity(client)) {
                                 break;
                             }
@@ -2471,8 +2471,8 @@ Daemon::reconnect()
     trace() << "reconn " << dump_internals() << std::endl;
 #endif
 
-    if (!discover || (nullptr == (scheduler = discover->try_get_scheduler()) &&
-                      discover->timed_out())) {
+    if (!discover || (nullptr == (scheduler = discover->tryGetScheduler()) &&
+                      discover->timedOut())) {
         delete discover;
         discover = new DiscoverSched(
             netname, max_scheduler_pong, schedname, scheduler_port);
