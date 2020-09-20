@@ -134,7 +134,7 @@ prepare_connect(const std::string &  hostname,
 
     if (!host) {
         log_error() << "Connecting to " << hostname
-                    << " failed: " << hstrerror(h_errno) << std::endl;
+                    << " failed: " << hstrerror(h_errno) << '\n';
         if ((-1 == close(remote_fd)) && (errno != EBADF)) {
             log_perror("close failed");
         }
@@ -142,7 +142,7 @@ prepare_connect(const std::string &  hostname,
     }
 
     if (host->h_length != 4) {
-        log_error() << "Invalid address length" << std::endl;
+        log_error() << "Invalid address length\n";
         if ((-1 == close(remote_fd)) && (errno != EBADF)) {
             log_perror("close failed");
         }
@@ -303,14 +303,14 @@ open_send_broadcast(int port, const char * buf, int size)
                     ((struct sockaddr_in *)addr->ifa_addr)->sin_addr.s_addr) ==
                 0x7f000001) {
                 trace() << "ignoring localhost " << addr->ifa_name
-                        << " for broadcast" << std::endl;
+                        << " for broadcast\n";
                 continue;
             }
 
             if ((addr->ifa_flags & IFF_POINTOPOINT) ||
                 !(addr->ifa_flags & IFF_BROADCAST)) {
                 log_info() << "ignoring tunnels " << addr->ifa_name
-                           << " for broadcast" << std::endl;
+                           << " for broadcast\n";
                 continue;
             }
         } else {
@@ -318,7 +318,7 @@ open_send_broadcast(int port, const char * buf, int size)
                     ((struct sockaddr_in *)addr->ifa_addr)->sin_addr.s_addr) !=
                 0x7f000001) {
                 trace() << "ignoring non-localhost " << addr->ifa_name
-                        << " for broadcast" << std::endl;
+                        << " for broadcast\n";
                 continue;
             }
         }
@@ -327,7 +327,7 @@ open_send_broadcast(int port, const char * buf, int size)
             log_info() << "broadcast " << addr->ifa_name << " "
                        << inet_ntoa(
                               ((sockaddr_in *)addr->ifa_broadaddr)->sin_addr)
-                       << std::endl;
+                       << '\n';
 
             remote_addr.sin_family = AF_INET;
             remote_addr.sin_port = htons(port);
@@ -484,7 +484,7 @@ MsgChannel::updateState()
                     /* Don't consume bytes from messages.  */
                     break;
                 } else {
-                    trace() << "NEED_PROTO but protocol > 0" << std::endl;
+                    trace() << "NEED_PROTO but protocol > 0\n";
                     setError();
                     return false;
                 }
@@ -503,7 +503,7 @@ MsgChannel::updateState()
 
                 if (inmsglen > MAX_MSG_SIZE) {
                     log_error() << "received a too large message (size "
-                                << inmsglen << "), ignoring" << std::endl;
+                                << inmsglen << "), ignoring\n";
                     setError();
                     return false;
                 }
@@ -634,7 +634,7 @@ MsgChannel::flushWritebuf(bool blocking)
                 }
                 if (ready == 0) {
                     log_error()
-                        << "timed out while trying to send data" << std::endl;
+                        << "timed out while trying to send data\n";
                 }
 
                 /* Timeout or real error --> error.  */
@@ -798,8 +798,7 @@ MsgChannel::readcompressed(std::vector<uint8_t> & buffer, size_t & _clen)
     if (IS_PROTOCOL_40(this)) {
         *this >> proto;
         if (proto != C_LZO && proto != C_ZSTD) {
-            log_error() << "Unknown compression protocol " << proto
-                        << std::endl;
+            log_error() << "Unknown compression protocol " << proto << '\n';
             _clen = compressed_len;
             setError();
             return;
@@ -812,8 +811,7 @@ MsgChannel::readcompressed(std::vector<uint8_t> & buffer, size_t & _clen)
     if (uncompressed_len > MAX_MSG_SIZE || compressed_len > (inofs - intogo) ||
         (uncompressed_len && !compressed_len) ||
         inofs < intogo + compressed_len) {
-        log_error() << "failure in readcompressed() length checking"
-                    << std::endl;
+        log_error() << "failure in readcompressed() length checking\n";
         _clen = compressed_len;
         setError();
         return;
@@ -828,7 +826,7 @@ MsgChannel::readcompressed(std::vector<uint8_t> & buffer, size_t & _clen)
         if (ZSTD_isError(ret)) {
             log_error() << "internal error - decompression of data from "
                         << dump().c_str()
-                        << " failed: " << ZSTD_getErrorName(ret) << std::endl;
+                        << " failed: " << ZSTD_getErrorName(ret) << '\n';
             buffer.clear();
         }
     } else if (proto == C_LZO && uncompressed_len && compressed_len) {
@@ -890,7 +888,7 @@ MsgChannel::writecompressed(const unsigned char * in_buf,
         if (ret != LZO_E_OK) {
             /* this should NEVER happen */
             log_error() << "internal error - compression failed: " << ret
-                        << std::endl;
+                        << '\n';
             out_len = 0;
         }
     } else if (proto == C_ZSTD) {
@@ -900,7 +898,7 @@ MsgChannel::writecompressed(const unsigned char * in_buf,
         if (ZSTD_isError(ret)) {
             /* this should NEVER happen */
             log_error() << "internal error - compression failed: "
-                        << ZSTD_getErrorName(ret) << std::endl;
+                        << ZSTD_getErrorName(ret) << '\n';
             out_len = 0;
         }
 
@@ -911,7 +909,7 @@ MsgChannel::writecompressed(const unsigned char * in_buf,
     if (out_len > MAX_MSG_SIZE) {
         log_error() << "internal error - size of compressed message to write "
                        "exceeds max size:"
-                    << out_len << std::endl;
+                    << out_len << '\n';
     }
     std::memcpy(msgbuf + msgtogo_old, &_olen, 4);
     msgtogo += out_len;
@@ -954,7 +952,7 @@ MsgChannel::setError(bool silent)
         return;
     }
     if (!silent && !set_error_recursion) {
-        trace() << "setting error state for channel " << dump() << std::endl;
+        trace() << "setting error state for channel " << dump() << '\n';
         // After the state is set to error, getMsg() will not return anything
         // anymore, so try to fetch last status from the other side, if
         // available.
@@ -963,7 +961,7 @@ MsgChannel::setError(bool silent)
 
         auto * stmsg = ext::get_if<StatusTextMsg>(&msg);
         if (stmsg != nullptr) {
-            log_error() << "remote status: " << stmsg->text << std::endl;
+            log_error() << "remote status: " << stmsg->text << '\n';
         }
         set_error_recursion = false;
     }
@@ -998,7 +996,7 @@ Service::createChannel(const std::string & hostname,
                     (struct sockaddr *)&remote_addr,
                     sizeof(remote_addr)) < 0) {
             log_perror_trace("connect");
-            trace() << "connect failed on " << hostname << std::endl;
+            trace() << "connect failed on " << hostname << '\n';
             if (-1 == close(remote_fd) && (errno != EBADF)) {
                 log_perror("close failed");
             }
@@ -1006,7 +1004,7 @@ Service::createChannel(const std::string & hostname,
         }
     }
 
-    trace() << "connected to " << hostname << std::endl;
+    trace() << "connected to " << hostname << '\n';
     return createChannel(
         remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
 }
@@ -1028,21 +1026,21 @@ Service::createChannel(const std::string & socket_path)
             sizeof(remote_addr.sun_path) - 1);
     remote_addr.sun_path[sizeof(remote_addr.sun_path) - 1] = '\0';
     if (socket_path.length() > sizeof(remote_addr.sun_path) - 1) {
-        log_error() << "socket_path path too long for sun_path" << std::endl;
+        log_error() << "socket_path path too long for sun_path\n";
     }
 
     if (connect(remote_fd,
                 (struct sockaddr *)&remote_addr,
                 sizeof(remote_addr)) < 0) {
         log_perror_trace("connect");
-        trace() << "connect failed on " << socket_path << std::endl;
+        trace() << "connect failed on " << socket_path << '\n';
         if ((-1 == close(remote_fd)) && (errno != EBADF)) {
             log_perror("close failed");
         }
         return nullptr;
     }
 
-    trace() << "connected to " << socket_path << std::endl;
+    trace() << "connected to " << socket_path << '\n';
     return createChannel(
         remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
 }
@@ -1083,7 +1081,7 @@ MsgChannel::MsgChannel(int _fd, struct sockaddr * _a, socklen_t _l) : fd(_fd)
             char buf[16384] = "";
             if (int error = getnameinfo(
                     addr, _l, buf, sizeof(buf), nullptr, 0, NI_NUMERICHOST))
-                log_error() << "getnameinfo(): " << error << std::endl;
+                log_error() << "getnameinfo(): " << error << '\n';
             name = buf;
         }
     } else {
@@ -1217,7 +1215,7 @@ MsgChannel::waitProtocol()
         }
 
         if (ret == 0) {
-            log_warning() << "no response within timeout" << std::endl;
+            log_warning() << "no response within timeout\n";
             setError();
             return false; /* timeout. Consider it a fatal error. */
         }
@@ -1317,15 +1315,14 @@ MsgChannel::getMsg(int timeout, bool eofAllowed)
        Don't use hasMsg() here, as it returns true for eof.  */
     if (eof()) {
         if (!eofAllowed) {
-            trace() << "saw eof without complete msg! " << instate << std::endl;
+            trace() << "saw eof without complete msg! " << instate << '\n';
             setError();
         }
         return ext::monostate{};
     }
 
     if (!hasMsg()) {
-        trace() << "saw eof without msg! " << eof_ << " " << instate
-                << std::endl;
+        trace() << "saw eof without msg! " << eof_ << " " << instate << '\n';
         setError();
         return ext::monostate{};
     }
@@ -1384,7 +1381,7 @@ MsgChannel::getMsg(int timeout, bool eofAllowed)
 
     bool fail = ext::visit(ext::make_visitor(
                                [this](ext::monostate & /*unused*/) {
-                                   trace() << "no message type" << std::endl;
+                                   trace() << "no message type\n";
                                    setError();
                                    return true;
                                },
@@ -1401,7 +1398,7 @@ MsgChannel::getMsg(int timeout, bool eofAllowed)
     if (intogo - intogo_old != inmsglen) {
         log_error()
             << "internal error - message not read correctly, message size "
-            << inmsglen << " read " << (intogo - intogo_old) << std::endl;
+            << inmsglen << " read " << (intogo - intogo_old) << '\n';
         setError();
         return ext::monostate{};
     }
@@ -1430,7 +1427,7 @@ MsgChannel::sendMsg(const Msg & msg, int flags)
 
     bool fail = ext::visit(ext::make_visitor(
                                [this](const ext::monostate & /*unused*/) {
-                                   trace() << "no message type" << std::endl;
+                                   trace() << "no message type\n";
                                    setError();
                                    return true;
                                },
@@ -1452,7 +1449,7 @@ MsgChannel::sendMsg(const Msg & msg, int flags)
     if (out_len > MAX_MSG_SIZE) {
         log_error()
             << "internal error - size of message to write exceeds max size:"
-            << out_len << std::endl;
+            << out_len << '\n';
         setError();
         return false;
     }
@@ -1640,7 +1637,7 @@ DiscoverSched::attemptSchedulerConnect()
 {
     time0 = time(nullptr) + MAX_SCHEDULER_PONG;
     log_info() << "scheduler is on " << schedname << ":" << sport << " (net "
-               << netname << ")" << std::endl;
+               << netname << ")\n";
 
     if ((ask_fd = prepare_connect(schedname, sport, remote_addr)) >= 0) {
         fcntl(ask_fd, F_SETFL, O_NONBLOCK);
@@ -1837,18 +1834,18 @@ DiscoverSched::tryGetScheduler()
                     log_warning() << "Ignoring bogus version " << version
                                   << " from scheduler found at "
                                   << inet_ntoa(remote_addr.sin_addr) << ":"
-                                  << ntohs(remote_addr.sin_port) << std::endl;
+                                  << ntohs(remote_addr.sin_port) << '\n';
                     continue;
                 } else if (version < 33) {
                     log_info() << "Suitable scheduler found at "
                                << inet_ntoa(remote_addr.sin_addr) << ":"
                                << ntohs(remote_addr.sin_port)
-                               << " (unknown version)" << std::endl;
+                               << " (unknown version)\n";
                 } else {
                     log_info() << "Suitable scheduler found at "
                                << inet_ntoa(remote_addr.sin_addr) << ":"
                                << ntohs(remote_addr.sin_port)
-                               << " (version: " << version << ")" << std::endl;
+                               << " (version: " << version << ")\n";
                 }
                 if (best_version != 0)
                     multiple = true;
@@ -1864,7 +1861,7 @@ DiscoverSched::tryGetScheduler()
                            << inet_ntoa(remote_addr.sin_addr) << ":"
                            << ntohs(remote_addr.sin_port)
                            << " because of a different netname (" << name << ")"
-                           << std::endl;
+                           << '\n';
             }
         }
 
@@ -1876,7 +1873,7 @@ DiscoverSched::tryGetScheduler()
             sport = best_port;
             if (multiple)
                 log_info() << "Selecting scheduler at " << schedname << ":"
-                           << sport << std::endl;
+                           << sport << '\n';
 
             if (-1 == close(ask_fd)) {
                 log_perror("close failed");
@@ -1970,7 +1967,7 @@ DiscoverSched::getBroadAnswer(int                  ask_fd,
           || (len == BROAD_BUFLEN &&
               buf2[0] == buf + 3))) { // PROTOCOL >= 38 scheduler
         log_error() << "Wrong scheduler discovery answer (size " << len
-                    << ", mark " << int(buf2[0]) << ")" << std::endl;
+                    << ", mark " << int(buf2[0]) << ")\n";
         return false;
     }
 

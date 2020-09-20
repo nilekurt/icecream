@@ -370,7 +370,7 @@ set_new_pgrp()
         return 0;
     }
 
-    trace() << "setpgid(0, 0) failed: " << strerror(errno) << std::endl;
+    trace() << "setpgid(0, 0) failed: " << strerror(errno) << '\n';
     return EXIT_DISTCC_FAILED;
 }
 
@@ -424,7 +424,7 @@ void
 usage(const char * reason = nullptr)
 {
     if (reason) {
-        std::cerr << reason << std::endl;
+        std::cerr << reason << '\n';
     }
 
     std::cerr
@@ -433,7 +433,7 @@ usage(const char * reason = nullptr)
            " [-v[v[v]]] [-u|--user-uid <user_uid>] [-b <env-basedir>] "
            "[--cache-limit <MB>] [-N <node_name>] [-i|--interface "
            "<net_interface>] [-p|--port <port>]"
-        << std::endl;
+        << '\n';
     exit(1);
 }
 
@@ -676,9 +676,9 @@ bool
 Daemon::setup_listen_tcp_fd(int & fd, const std::string & interface)
 {
     if (!interface.empty())
-        trace() << "starting to listen on interface " << interface << std::endl;
+        trace() << "starting to listen on interface " << interface << '\n';
     else
-        trace() << "starting to listen on all interfaces" << std::endl;
+        trace() << "starting to listen on all interfaces\n";
 
     if ((fd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
         log_perror("Failed to create TCP listen socket.");
@@ -752,11 +752,10 @@ Daemon::setup_listen_unix_fd()
             myaddr.sun_path[sizeof(myaddr.sun_path) - 1] = '\0';
             if (default_socket.length() > sizeof(myaddr.sun_path) - 1) {
                 log_error()
-                    << "default socket path too long for sun_path" << std::endl;
+                    << "default socket path too long for sun_path\n";
             }
             if (-1 == unlink(myaddr.sun_path) && errno != ENOENT) {
-                log_perror("unlink failed")
-                    << "\t" << myaddr.sun_path << std::endl;
+                log_perror("unlink failed") << "\t" << myaddr.sun_path << '\n';
             }
             old_umask = umask(0);
             reset_umask = true;
@@ -771,15 +770,14 @@ Daemon::setup_listen_unix_fd()
                 if (socket_path.length() > sizeof(myaddr.sun_path) - 1) {
                     log_error()
                         << "$HOME/.iceccd.socket path too long for sun_path"
-                        << std::endl;
+                        << '\n';
                 }
                 if (-1 == unlink(myaddr.sun_path) && errno != ENOENT) {
                     log_perror("unlink failed")
-                        << "\t" << myaddr.sun_path << std::endl;
+                        << "\t" << myaddr.sun_path << '\n';
                 }
             } else {
-                log_error()
-                    << "launched by user, but $HOME not set" << std::endl;
+                log_error() << "launched by user, but $HOME not set\n";
                 return false;
             }
         }
@@ -790,10 +788,10 @@ Daemon::setup_listen_unix_fd()
         myaddr.sun_path[sizeof(myaddr.sun_path) - 1] = '\0';
         if (test_socket.length() > sizeof(myaddr.sun_path) - 1) {
             log_error() << "$ICECC_TEST_SOCKET path too long for sun_path"
-                        << std::endl;
+                        << '\n';
         }
         if (-1 == unlink(myaddr.sun_path) && errno != ENOENT) {
-            log_perror("unlink failed") << "\t" << myaddr.sun_path << std::endl;
+            log_perror("unlink failed") << "\t" << myaddr.sun_path << '\n';
         }
         old_umask = umask(0);
         reset_umask = true;
@@ -886,10 +884,9 @@ Daemon::determine_supported_features()
 #endif
     // sanity checks
     if (archive_read_support_filter_gzip(a) < ARCHIVE_WARN) // error
-        log_error() << "No support for uncompressing gzip available."
-                    << std::endl;
+        log_error() << "No support for uncompressing gzip available.\n";
     if (archive_read_support_format_tar(a) < ARCHIVE_WARN) // error
-        log_error() << "No support for unpacking tar available." << std::endl;
+        log_error() << "No support for unpacking tar available.\n";
     archive_read_free(a);
 }
 
@@ -897,12 +894,12 @@ bool
 Daemon::send_scheduler(const Msg & msg)
 {
     if (!scheduler) {
-        log_error() << "scheduler dead ?!" << std::endl;
+        log_error() << "scheduler dead ?!\n";
         return false;
     }
 
     if (!scheduler->sendMsg(msg)) {
-        log_error() << "sending message to scheduler failed.." << std::endl;
+        log_error() << "sending message to scheduler failed..\n";
         close_scheduler();
         return false;
     }
@@ -913,7 +910,7 @@ Daemon::send_scheduler(const Msg & msg)
 bool
 Daemon::reannounce_environments()
 {
-    log_info() << "reannounce_environments " << std::endl;
+    log_info() << "reannounce_environments \n";
     LoginMsg lmsg(0, nodename, "", supported_features);
     lmsg.envs = available_environments(envbasedir);
     return send_scheduler(lmsg);
@@ -1103,7 +1100,7 @@ Daemon::dump_internals() const
 int
 Daemon::scheduler_get_internals()
 {
-    trace() << "handle_get_internals " << dump_internals() << std::endl;
+    trace() << "handle_get_internals " << dump_internals() << '\n';
     return send_scheduler(StatusTextMsg(dump_internals())) ? 0 : 1;
 }
 
@@ -1112,7 +1109,7 @@ Daemon::scheduler_use_cs(const UseCSMsg & msg)
 {
     Client * c = clients.find_by_client_id(msg.client_id);
     trace() << "scheduler_use_cs " << msg.job_id << " " << msg.client_id << " "
-            << c << " " << msg.hostname << " " << remote_name << std::endl;
+            << c << " " << msg.hostname << " " << remote_name << '\n';
 
     if (!c) {
         if (send_scheduler(JobDoneMsg(
@@ -1160,7 +1157,7 @@ Daemon::scheduler_no_cs(const NoCSMsg & msg)
 {
     Client * c = clients.find_by_client_id(msg.client_id);
     trace() << "scheduler_no_cs " << msg.job_id << " " << msg.client_id << " "
-            << c << " " << std::endl;
+            << c << " \n";
 
     if (!c) {
         if (send_scheduler(JobDoneMsg(
@@ -1184,7 +1181,7 @@ bool
 Daemon::handle_transfer_env(Client * client, const EnvTransferMsg & emsg)
 {
     log_info() << "handle_transfer_env, client status "
-               << Client::status_str(client->status) << std::endl;
+               << Client::status_str(client->status) << '\n';
 
     assert(client->status != Client::TOINSTALL &&
            client->status != Client::WAITINSTALL &&
@@ -1225,7 +1222,7 @@ Daemon::handle_transfer_env(Client * client, const EnvTransferMsg & emsg)
     current_kids++;
 
     trace() << "PID of child thread running untaring environment: " << pid
-            << std::endl;
+            << '\n';
     client->pipe_to_child = pipe_to_child;
     client->pipe_from_child = pipe_from_child;
     client->child_pid = pid;
@@ -1287,7 +1284,7 @@ Daemon::handle_file_chunk_env(Client * client, const Msg & msg)
             },
             [this, client](const EndMsg & /*unused*/) {
                 trace() << "received end of environment, waiting for child"
-                        << std::endl;
+                        << '\n';
                 close(client->pipe_to_child);
                 client->pipe_to_child = -1;
                 if (client->child_pid >= 0) {
@@ -1304,7 +1301,7 @@ Daemon::handle_file_chunk_env(Client * client, const Msg & msg)
             [this, client](const auto & m) {
                 // unexpected message type
                 log_error() << "protocol error while receiving environment ("
-                            << message_type(m) << ")" << std::endl;
+                            << message_type(m) << ")\n";
                 handle_end(client, 138);
                 return false;
             }),
@@ -1332,7 +1329,7 @@ Daemon::handle_env_install_child_done(Client * client)
     }
     log_info() << "handle_env_install_child_done PID " << client->child_pid
                << " for " << client->outfile
-               << " status: " << (success ? "success" : "failed") << std::endl;
+               << " status: " << (success ? "success" : "failed") << '\n';
     client->child_pid = -1;
     assert(current_kids > 0);
     current_kids--;
@@ -1355,7 +1352,7 @@ bool
 Daemon::finish_transfer_env(Client * client, bool cancel)
 {
     log_info() << "finish_transfer_env for " << client->outfile
-               << (cancel ? " (cancel)" : "") << std::endl;
+               << (cancel ? " (cancel)" : "") << '\n';
 
     assert(client->outfile.size());
     assert(client->status == Client::TOINSTALL ||
@@ -1379,7 +1376,7 @@ Daemon::finish_transfer_env(Client * client, bool cancel)
         kill(client->child_pid, SIGTERM);
         int status;
         trace() << "finish_transfer_env kill and waiting for child PID "
-                << client->child_pid << std::endl;
+                << client->child_pid << '\n';
         while (waitpid(client->child_pid, &status, 0) < 0 && errno == EINTR)
             ;
         client->child_pid = -1;
@@ -1391,7 +1388,7 @@ Daemon::finish_transfer_env(Client * client, bool cancel)
     if (!cancel) {
         installed_size = finalize_install_environment(
             envbasedir, client->outfile, user_uid, user_gid);
-        log_info() << "installed_size: " << installed_size << std::endl;
+        log_info() << "installed_size: " << installed_size << '\n';
     }
     if (installed_size == 0)
         remove_environment_files(envbasedir, client->outfile);
@@ -1405,7 +1402,7 @@ Daemon::finish_transfer_env(Client * client, bool cancel)
         received_environments[current].last_use = time(nullptr);
         received_environments[current].size = installed_size;
         log_info() << "installed " << current << " size: " << installed_size
-                   << " all: " << cache_size << std::endl;
+                   << " all: " << cache_size << '\n';
     }
 
     check_cache_size(current);
@@ -1433,7 +1430,7 @@ Daemon::check_cache_size(const std::string & new_env)
 
         for (const auto & it : received_environments) {
             trace() << "considering cached environment: " << it.first << " "
-                    << it.second.last_use << " " << oldest_time << std::endl;
+                    << it.second.last_use << " " << oldest_time << '\n';
 
             if (access(std::string(envbasedir + "/target=" + it.first +
                                    "/usr/bin/as")
@@ -1441,7 +1438,7 @@ Daemon::check_cache_size(const std::string & new_env)
                        X_OK) != 0) {
                 trace() << std::string(envbasedir + "/target=" + it.first +
                                        "/usr/bin/as")
-                        << " is missing, removing environment" << std::endl;
+                        << " is missing, removing environment\n";
                 // force removing this one
                 oldest_time = 0;
                 oldest_received = it.first;
@@ -1480,12 +1477,12 @@ Daemon::check_cache_size(const std::string & new_env)
         }
         for (const auto & it : native_environments) {
             trace() << "considering native environment: " << it.first << " "
-                    << it.second.last_use << " " << oldest_time << std::endl;
+                    << it.second.last_use << " " << oldest_time << '\n';
 
             if (!it.second.name.empty() &&
                 access(it.second.name.c_str(), R_OK) != 0) {
                 trace() << it.second.name << " is missing, removing environment"
-                        << std::endl;
+                        << '\n';
                 // force removing this one
                 oldest_time = 0;
                 oldest_native = it.first;
@@ -1531,7 +1528,7 @@ Daemon::remove_native_environment(const std::string & env_key)
     assert(!env_key.empty());
     remove_native_environment_files(env_key);
     const NativeEnvironment & env = native_environments[env_key];
-    trace() << "removing " << env.name << " " << env.size << std::endl;
+    trace() << "removing " << env.name << " " << env.size << '\n';
     if (env.create_env_pipe) {
         if ((-1 == close(env.create_env_pipe)) && (errno != EBADF)) {
             log_perror("close failed");
@@ -1550,7 +1547,7 @@ Daemon::remove_environment(const std::string & env_key)
     remove_environment_files(envbasedir, env_key);
     const ReceivedEnvironment & env = received_environments[env_key];
     trace() << "removing " << envbasedir << "/target=" << env_key << " "
-            << env.size << std::endl;
+            << env.size << '\n';
     assert(cache_size >= env.size);
     cache_size -= env.size;
     received_environments.erase(env_key);
@@ -1573,11 +1570,11 @@ Daemon::handle_get_native_env(Client * client, const GetNativeEnvMsg & msg)
     std::string cppcompiler = get_cpp_compiler(compiler);
 
     trace() << "get_native_env for " << msg.compiler << " (" << ccompiler << ","
-            << cppcompiler << ")" << std::endl;
+            << cppcompiler << ")\n";
 
     if (stat(ccompiler.c_str(), &st) != 0) {
         log_error() << "Compiler binary " << ccompiler
-                    << " for environment not found." << std::endl;
+                    << " for environment not found.\n";
         client->channel->sendMsg(EndMsg());
         handle_end(client, 122);
         return false;
@@ -1595,7 +1592,7 @@ Daemon::handle_get_native_env(Client * client, const GetNativeEnvMsg & msg)
 
         if (stat(it->c_str(), &st) != 0) {
             log_error() << "Extra file " << *it << " for environment not found."
-                        << std::endl;
+                        << '\n';
             client->channel->sendMsg(EndMsg());
             handle_end(client, 122);
             return false;
@@ -1608,13 +1605,13 @@ Daemon::handle_get_native_env(Client * client, const GetNativeEnvMsg & msg)
         const NativeEnvironment & env = native_environments[env_key];
 
         if (env.filetimes != filetimes || access(env.name.c_str(), R_OK) != 0) {
-            trace() << "native_env needs rebuild" << std::endl;
+            trace() << "native_env needs rebuild\n";
             remove_native_environment(env.name);
         }
     }
 
     trace() << "get_native_env " << native_environments[env_key].name << " ("
-            << env_key << ")" << std::endl;
+            << env_key << ")\n";
 
     client->status = Client::WAITCREATEENV;
     client->pending_create_env = env_key;
@@ -1627,7 +1624,7 @@ Daemon::handle_get_native_env(Client * client, const GetNativeEnvMsg & msg)
         if (!env.create_env_pipe) { // start creating it only if not already in
                                     // progress
             env.filetimes = filetimes;
-            trace() << "start_create_env " << env_key << std::endl;
+            trace() << "start_create_env " << env_key << '\n';
             env.create_env_pipe = start_create_env(envbasedir,
                                                    user_uid,
                                                    user_gid,
@@ -1636,7 +1633,7 @@ Daemon::handle_get_native_env(Client * client, const GetNativeEnvMsg & msg)
                                                    msg.compression);
         } else {
             trace() << "waiting for already running create_env " << env_key
-                    << std::endl;
+                    << '\n';
         }
     }
     return true;
@@ -1666,7 +1663,7 @@ Daemon::create_env_finished(std::string env_key)
     assert(native_environments.count(env_key));
     NativeEnvironment & env = native_environments[env_key];
 
-    trace() << "create_env_finished " << env_key << std::endl;
+    trace() << "create_env_finished " << env_key << '\n';
     assert(env.create_env_pipe);
     size_t installed_size =
         finish_create_env(env.create_env_pipe, envbasedir, env.name);
@@ -1674,7 +1671,7 @@ Daemon::create_env_finished(std::string env_key)
 
     // we only clean out cache on next target install
     cache_size += installed_size;
-    trace() << "cache_size = " << cache_size << std::endl;
+    trace() << "cache_size = " << cache_size << '\n';
 
     if (!installed_size) {
         bool repeat = true;
@@ -1714,8 +1711,7 @@ Daemon::handle_job_done(Client * cl, const JobDoneMsg & msg)
     }
 
     cl->status = Client::JOBDONE;
-    trace() << "handle_job_done " << msg.job_id << " " << msg.exitcode
-            << std::endl;
+    trace() << "handle_job_done " << msg.job_id << " " << msg.exitcode << '\n';
 
     if (!msg.isFromServer() &&
         (msg.user_msec + msg.sys_msec) <= msg.real_msec) {
@@ -1740,17 +1736,15 @@ Daemon::handle_old_request()
         Client * client = clients.get_earliest_client(Client::LINKJOB);
 
         if (client) {
-            trace() << "send JobLocalBeginMsg to client" << std::endl;
+            trace() << "send JobLocalBeginMsg to client\n";
 
             if (!client->channel->sendMsg(JobLocalBeginMsg())) {
-                log_warning()
-                    << "can't send start message to client" << std::endl;
+                log_warning() << "can't send start message to client\n";
                 handle_end(client, 112);
             } else {
                 client->status = Client::CLIENTWORK;
                 clients.active_processes++;
-                trace() << "pushed local job " << client->client_id
-                        << std::endl;
+                trace() << "pushed local job " << client->client_id << '\n';
 
                 if (!send_scheduler(
                         JobLocalBeginMsg(client->client_id, client->outfile))) {
@@ -1764,7 +1758,7 @@ Daemon::handle_old_request()
         client = clients.get_earliest_client(Client::PENDING_USE_CS);
 
         if (client) {
-            trace() << "pending " << client->dump() << std::endl;
+            trace() << "pending " << client->dump() << '\n';
 
             if (client->channel->sendMsg(*client->usecsmsg)) {
                 client->status = Client::CLIENTWORK;
@@ -1792,7 +1786,7 @@ Daemon::handle_old_request()
             int   sock = -1;
             pid_t pid = -1;
 
-            trace() << "request for job " << job->jobID() << std::endl;
+            trace() << "request for job " << job->jobID() << '\n';
 
             std::string envforjob =
                 job->targetPlatform() + "/" + job->environmentVersion();
@@ -1804,7 +1798,7 @@ Daemon::handle_old_request()
                                     mem_limit,
                                     user_uid,
                                     user_gid);
-            trace() << "handle connection returned " << pid << std::endl;
+            trace() << "handle connection returned " << pid << '\n';
 
             if (pid > 0) {
                 current_kids++;
@@ -1815,7 +1809,7 @@ Daemon::handle_old_request()
                 if (!send_scheduler(
                         JobBeginMsg(job->jobID(), clients.size()))) {
                     log_info() << "failed sending scheduler about "
-                               << job->jobID() << std::endl;
+                               << job->jobID() << '\n';
                 }
             } else {
                 handle_end(client, 117);
@@ -1867,12 +1861,12 @@ Daemon::handle_compile_done(Client * client)
         if (!reannounce_environments())
             log_warning()
                 << "failed reannounce environments after failed compile "
-                << client->job->jobID() << std::endl;
+                << client->job->jobID() << '\n';
     }
 
     if (!send_scheduler(*msg))
         log_warning() << "failed sending scheduler about compile done "
-                      << client->job->jobID() << std::endl;
+                      << client->job->jobID() << '\n';
     handle_end(client, end_status);
     delete msg;
     return false;
@@ -1893,7 +1887,7 @@ Daemon::handle_compile_file(Client * client, CompileFileMsg & msg)
                 JobBeginMsg(client->job->jobID(), clients.size()))) {
             trace()
                 << "can't reach scheduler to tell him about compile file job "
-                << client->job->jobID() << std::endl;
+                << client->job->jobID() << '\n';
             return false;
         }
 
@@ -1916,11 +1910,11 @@ Daemon::handle_verify_env(Client * client, const VerifyEnvMsg & msg)
                          user_gid);
     trace() << "Verify environment done, " << (ok ? "success" : "failure")
             << ", environment " << msg.environment << " (" << msg.target << ")"
-            << std::endl;
+            << '\n';
     VerifyEnvResultMsg resultmsg(ok);
 
     if (!client->channel->sendMsg(resultmsg)) {
-        log_error() << "sending verify end result failed.." << std::endl;
+        log_error() << "sending verify end result failed..\n";
         return false;
     }
 
@@ -1946,10 +1940,10 @@ void
 Daemon::handle_end(Client * client, int exitcode)
 {
     trace() << "handle_end " << client->client_id << " "
-            << client->channel->name << std::endl;
+            << client->channel->name << '\n';
 #if DEBUG_LEVEL > 0
-    trace() << "handle_end " << client->dump() << std::endl;
-    trace() << dump_internals() << std::endl;
+    trace() << "handle_end " << client->dump() << '\n';
+    trace() << dump_internals() << '\n';
 #endif
     fd2chan.erase(client->channel->fd);
 
@@ -1970,10 +1964,9 @@ Daemon::handle_end(Client * client, int exitcode)
     /* Delete from the clients map before send_scheduler, which causes a
        double deletion. */
     if (!clients.erase(client->channel)) {
-        log_error() << "client can't be erased: " << client->channel
-                    << std::endl;
+        log_error() << "client can't be erased: " << client->channel << '\n';
         flush_debug();
-        log_error() << dump_internals() << std::endl;
+        log_error() << dump_internals() << '\n';
         flush_debug();
         assert(false);
     }
@@ -2026,7 +2019,7 @@ Daemon::handle_end(Client * client, int exitcode)
             }
             if (!send_scheduler(msg)) {
                 trace() << "failed to reach scheduler for remote job done msg!"
-                        << std::endl;
+                        << '\n';
             }
         } else if (client->status == Client::CLIENTWORK) {
             // Clientwork && !job_id == LINK
@@ -2035,7 +2028,7 @@ Daemon::handle_end(Client * client, int exitcode)
 
             if (!send_scheduler(JobLocalDoneMsg(client->client_id))) {
                 trace() << "failed to reach scheduler for local job done msg!"
-                        << std::endl;
+                        << '\n';
             }
         }
     }
@@ -2075,7 +2068,7 @@ Daemon::handle_get_cs(Client * client, GetCSMsg & msg)
     assert(client);
     client->status = Client::WAITFORCS;
     msg.client_id = client->client_id;
-    trace() << "handle_get_cs " << msg.client_id << std::endl;
+    trace() << "handle_get_cs " << msg.client_id << '\n';
 
     if (!scheduler) {
         /* now the thing is this: if there is no scheduler
@@ -2157,7 +2150,7 @@ Daemon::handle_activity(Client * client)
             },
             [this, client](auto & m) {
                 log_error() << "protocol error " << message_type(m)
-                            << " on client " << client->dump() << std::endl;
+                            << " on client " << client->dump() << '\n';
                 client->channel->sendMsg(EndMsg{});
                 handle_end(client, 120);
 
@@ -2172,11 +2165,11 @@ Daemon::answer_client_requests()
 #if DEBUG_LEVEL > 0
 
     if (clients.size() + current_kids) {
-        log_info() << dump_internals() << std::endl;
+        log_info() << dump_internals() << '\n';
     }
 
     log_info() << "clients " << clients.dump_per_status() << " " << current_kids
-               << " (" << max_kids << ")" << std::endl;
+               << " (" << max_kids << ")\n";
 
 #endif
 
@@ -2290,7 +2283,7 @@ Daemon::answer_client_requests()
                 auto msg = scheduler->getMsg(0, true);
 
                 if (ext::holds_alternative<ext::monostate>(msg)) {
-                    log_warning() << "scheduler closed connection" << std::endl;
+                    log_warning() << "scheduler closed connection\n";
                     close_scheduler();
                     clear_children();
                     return;
@@ -2317,7 +2310,7 @@ Daemon::answer_client_requests()
                         },
                         [this, &ret](const auto & m) {
                             log_error() << "unknown scheduler type "
-                                        << message_type(m) << std::endl;
+                                        << message_type(m) << '\n';
                             ret = 1;
                         }),
                     msg);
@@ -2371,7 +2364,7 @@ Daemon::answer_client_requests()
             fd2chan[c->fd] = c;
 
             trace() << "accepted " << c->fd << " " << c->name << " as "
-                    << client->client_id << std::endl;
+                    << client->client_id << '\n';
 
             while (!c->readSome() || c->hasMsg()) {
                 if (!handle_activity(client)) {
@@ -2463,12 +2456,12 @@ Daemon::reconnect()
     }
 
     if (!discover && next_scheduler_connect > time(nullptr)) {
-        trace() << "Delaying reconnect." << std::endl;
+        trace() << "Delaying reconnect.\n";
         return false;
     }
 
 #if DEBUG_LEVEL > 0
-    trace() << "reconn " << dump_internals() << std::endl;
+    trace() << "reconn " << dump_internals() << '\n';
 #endif
 
     if (!discover || (nullptr == (scheduler = discover->tryGetScheduler()) &&
@@ -2479,7 +2472,7 @@ Daemon::reconnect()
     }
 
     if (!scheduler) {
-        log_warning() << "scheduler not yet found/selected." << std::endl;
+        log_warning() << "scheduler not yet found/selected.\n";
         return false;
     }
 
@@ -2496,7 +2489,7 @@ Daemon::reconnect()
     }
 
     log_info() << "Connected to scheduler (I am known as " << remote_name << ")"
-               << std::endl;
+               << '\n';
     current_load = -1000;
     gettimeofday(&last_stat, nullptr);
     icecream_load = 0;
@@ -2761,7 +2754,7 @@ main(int argc, char ** argv)
             d.user_gid,
             (capng_flags_t)(CAPNG_DROP_SUPP_GRP | CAPNG_CLEAR_BOUNDING));
         if (r) {
-            log_error() << "Error: capng_change_id failed: " << r << std::endl;
+            log_error() << "Error: capng_change_id failed: " << r << '\n';
             exit(EXIT_SETUID_FAILED);
         }
 #endif
@@ -2780,10 +2773,9 @@ main(int argc, char ** argv)
     setup_debug(debug_level, logfile);
 
     log_info() << "ICECREAM daemon " VERSION " starting up (nice level "
-               << nice_level << ") " << std::endl;
+               << nice_level << ") \n";
     if (remote_disabled)
-        log_warning() << "Cannot use chroot, no remote jobs accepted."
-                      << std::endl;
+        log_warning() << "Cannot use chroot, no remote jobs accepted.\n";
     if (d.noremote)
         d.daemon_port = 0;
 
@@ -2791,7 +2783,7 @@ main(int argc, char ** argv)
 
     if (chdir("/") != 0) {
         log_error() << "failed to switch to root directory: " << strerror(errno)
-                    << std::endl;
+                    << '\n';
         exit(EXIT_DISTCC_FAILED);
     }
 
@@ -2803,8 +2795,7 @@ main(int argc, char ** argv)
     }
 
     if (dcc_ncpus(&d.num_cpus) == 0) {
-        log_info() << d.num_cpus << " CPU(s) online on this server"
-                   << std::endl;
+        log_info() << d.num_cpus << " CPU(s) online on this server\n";
     }
 
     if (max_processes < 0) {
@@ -2813,12 +2804,11 @@ main(int argc, char ** argv)
         max_kids = max_processes;
     }
 
-    log_info() << "allowing up to " << max_kids << " active jobs" << std::endl;
+    log_info() << "allowing up to " << max_kids << " active jobs\n";
 
     d.determine_supported_features();
     log_info() << "supported features: "
-               << supported_features_to_string(d.supported_features)
-               << std::endl;
+               << supported_features_to_string(d.supported_features) << '\n';
 
     int ret;
 
@@ -2834,13 +2824,12 @@ main(int argc, char ** argv)
 
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
         log_warning() << "signal(SIGPIPE, ignore) failed: " << strerror(errno)
-                      << std::endl;
+                      << '\n';
         exit(EXIT_DISTCC_FAILED);
     }
 
     if (signal(SIGCHLD, SIG_DFL) == SIG_ERR) {
-        log_warning() << "signal(SIGCHLD) failed: " << strerror(errno)
-                      << std::endl;
+        log_warning() << "signal(SIGCHLD) failed: " << strerror(errno) << '\n';
         exit(EXIT_DISTCC_FAILED);
     }
 
@@ -2853,7 +2842,7 @@ main(int argc, char ** argv)
     progName = find_basename(progName);
     pidFilePath = std::string(RUNDIR) + "/" + progName + ".pid";
     pidFile.open(pidFilePath.c_str());
-    pidFile << dcc_master_pid << std::endl;
+    pidFile << dcc_master_pid << '\n';
     pidFile.close();
 
     if (!cleanup_cache(d.envbasedir, d.user_uid, d.user_gid)) {
@@ -2861,10 +2850,10 @@ main(int argc, char ** argv)
     }
 
     std::list<std::string> nl = get_netnames(200, d.scheduler_port);
-    trace() << "Netnames:" << std::endl;
+    trace() << "Netnames:\n";
 
     for (auto it = nl.begin(); it != nl.end(); ++it) {
-        trace() << *it << std::endl;
+        trace() << *it << '\n';
     }
 
     if (!d.setup_listen_fds()) { // error

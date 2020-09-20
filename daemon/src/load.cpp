@@ -177,7 +177,7 @@ updateCPULoad(CPULoadInfo * load)
             log_error() << "Cannot open file \'/proc/stat\'!\n"
                            "The kernel needs to be compiled with support\n"
                            "for /proc filesystem enabled!"
-                        << std::endl;
+                        << '\n';
             return;
         }
 
@@ -194,7 +194,7 @@ updateCPULoad(CPULoadInfo * load)
     }
 
     if (n < 20) {
-        log_error() << "no enough data in /proc/stat?" << std::endl;
+        log_error() << "no enough data in /proc/stat?\n";
         return;
     }
 
@@ -330,7 +330,7 @@ calculateMemLoad(unsigned long int & NetMemFree)
             log_error() << "Cannot open file \'/proc/meminfo\'!\n"
                            "The kernel needs to be compiled with support\n"
                            "for /proc filesystem enabled!"
-                        << std::endl;
+                        << '\n';
             return 0;
         }
 

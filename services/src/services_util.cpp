@@ -149,8 +149,7 @@ read_command_output(const std::string &              command,
     flush_debug();
     int pipes[2];
     if (pipe(pipes) == -1) {
-        log_error() << "failed to create pipe: " << strerror(errno)
-                    << std::endl;
+        log_error() << "failed to create pipe: " << strerror(errno) << '\n';
         _exit(147);
     }
     pid_t pid = fork();

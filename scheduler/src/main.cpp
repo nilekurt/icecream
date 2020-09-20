@@ -234,7 +234,7 @@ add_job_stats(Job * job, const JobDoneMsg & msg)
                 << st.outputSize() << " " << msg->out_uncompressed << " "
                 << job->server()->nodeName() << " "
                 << float(msg->out_uncompressed) / st.compileTimeUser() << " "
-                << server_speed(job->server(), NULL, true) << std::endl;
+                << server_speed(job->server(), NULL, true) << '\n';
     }
 #endif
 }
@@ -250,7 +250,7 @@ notify_monitors(const Msg & m)
         if (!(*it)->sendMsg(
                 m,
                 MsgChannel::SendNonBlocking /*| MsgChannel::SendBulkOnly*/)) {
-            trace() << "monitor is blocking... removing" << std::endl;
+            trace() << "monitor is blocking... removing\n";
             handle_end(*it);
         }
     }
@@ -290,7 +290,7 @@ server_speed(CompileServer * cs, Job * job, bool blockDebug)
 #if DEBUG_LEVEL > 2
                     if (!blockDebug)
                         log_info() << "penalizing local build for job "
-                                   << job->id() << std::endl;
+                                   << job->id() << '\n';
 #endif
                 } else if (clientCount == cs->maxJobs()) {
                     // This means the submitter would be fully loaded by its
@@ -300,7 +300,7 @@ server_speed(CompileServer * cs, Job * job, bool blockDebug)
 #if DEBUG_LEVEL > 2
                     if (!blockDebug)
                         log_info() << "slightly penalizing local build for job "
-                                   << job->id() << std::endl;
+                                   << job->id() << '\n';
 #endif
                 } else if (clientCount <= cs->maxJobs() / 2) {
                     // The submitter has only few jobs, slightly prefer building
@@ -314,7 +314,7 @@ server_speed(CompileServer * cs, Job * job, bool blockDebug)
 #if DEBUG_LEVEL > 2
                     if (!blockDebug)
                         log_info() << "slightly preferring local build for job "
-                                   << job->id() << std::endl;
+                                   << job->id() << '\n';
 #endif
                 } else {
                     // the remaining case, don't adjust
@@ -557,7 +557,7 @@ handle_cs_request(MsgChannel * cs, const GetCSMsg & msg)
         }
 
         dbg << "] " << msg.filename << " " << job->language() << " "
-            << job->niceness() << std::endl;
+            << job->niceness() << '\n';
         notify_monitors(MonGetCSMsg(job->id(), submitter->hostId(), msg));
 
         if (!master_job) {
@@ -574,7 +574,7 @@ void
 handle_job_local_begin(CompileServer * cs, const JobLocalBeginMsg & msg)
 {
     ++new_job_id;
-    trace() << "handle_local_job " << msg.outfile << " " << msg.id << std::endl;
+    trace() << "handle_local_job " << msg.outfile << " " << msg.id << '\n';
     cs->insertClientJobId(msg.id, new_job_id);
     notify_monitors(
         MonLocalJobBeginMsg(new_job_id, msg.outfile, msg.stime, cs->hostId()));
@@ -583,7 +583,7 @@ handle_job_local_begin(CompileServer * cs, const JobLocalBeginMsg & msg)
 void
 handle_job_local_done(CompileServer * cs, const JobLocalDoneMsg & msg)
 {
-    trace() << "handle_local_job_done " << msg.job_id << std::endl;
+    trace() << "handle_local_job_done " << msg.job_id << '\n';
     notify_monitors(new JobLocalDoneMsg(cs->getClientJobId(msg.job_id)));
     cs->eraseClientJobId(msg.job_id);
 }
@@ -632,7 +632,7 @@ pick_server(Job * job)
 {
 #if DEBUG_LEVEL > 1
     trace() << "pick_server " << job->id() << " " << job->targetPlatform()
-            << std::endl;
+            << '\n';
 #endif
 
 #if DEBUG_LEVEL > 0
@@ -666,7 +666,7 @@ pick_server(Job * job)
             if (cs->matches(job->preferredHost()) && cs->is_eligible_now(job)) {
 #if DEBUG_LEVEL > 1
                 trace() << "taking preferred " << cs->nodeName() << " "
-                        << server_speed(cs, job, true) << std::endl;
+                        << server_speed(cs, job, true) << '\n';
 #endif
                 return cs;
             }
@@ -693,8 +693,7 @@ pick_server(Job * job)
         if (selected != nullptr) {
             trace() << "no job stats - returning randomly selected "
                     << selected->nodeName() << " load: " << selected->load()
-                    << " can install: " << selected->can_install(job)
-                    << std::endl;
+                    << " can install: " << selected->can_install(job) << '\n';
             return selected;
         }
 
@@ -719,9 +718,9 @@ pick_server(Job * job)
                 (cs->load() >= 1000)) {
                 trace() << "overloaded " << cs->nodeName() << " "
                         << cs->jobList().size() << "/" << cs->maxJobs()
-                        << " jobs, load:" << cs->load() << std::endl;
+                        << " jobs, load:" << cs->load() << '\n';
             } else
-                trace() << cs->nodeName() << " not eligible" << std::endl;
+                trace() << cs->nodeName() << " not eligible\n";
 #endif
             continue;
         }
@@ -729,8 +728,7 @@ pick_server(Job * job)
         // incompatible architecture or busy installing
         if (!cs->can_install(job).size()) {
 #if DEBUG_LEVEL > 2
-            trace() << cs->nodeName() << " can't install " << job->id()
-                    << std::endl;
+            trace() << cs->nodeName() << " can't install " << job->id() << '\n';
 #endif
             continue;
         }
@@ -754,7 +752,7 @@ pick_server(Job * job)
                 << " speed: " << server_speed(cs, job, true) << " compile time "
                 << cs->cumCompiled().compileTimeUser() << " produced code "
                 << cs->cumCompiled().outputSize()
-                << " client count: " << cs->clientCount() << std::endl;
+                << " client count: " << cs->clientCount() << '\n';
 #endif
 
         if ((cs->lastCompiledJobs().size() == 0) &&
@@ -821,7 +819,7 @@ pick_server(Job * job)
     if (best) {
 #if DEBUG_LEVEL > 1
         trace() << "taking best installed " << best->nodeName() << " "
-                << server_speed(best, job, true) << std::endl;
+                << server_speed(best, job, true) << '\n';
 #endif
         return best;
     }
@@ -829,7 +827,7 @@ pick_server(Job * job)
     if (bestui) {
 #if DEBUG_LEVEL > 1
         trace() << "taking best uninstalled " << bestui->nodeName() << " "
-                << server_speed(bestui, job, true) << std::endl;
+                << server_speed(bestui, job, true) << '\n';
 #endif
         return bestui;
     }
@@ -837,7 +835,7 @@ pick_server(Job * job)
     if (bestpre) {
 #if DEBUG_LEVEL > 1
         trace() << "taking best preload " << bestpre->nodeName() << " "
-                << server_speed(bestpre, job, true) << std::endl;
+                << server_speed(bestpre, job, true) << '\n';
 #endif
     }
 
@@ -876,7 +874,7 @@ prune_servers()
         if ((*it)->busyInstalling() &&
             ((now - (*it)->busyInstalling()) >= MAX_BUSY_INSTALLING)) {
             trace() << "busy installing for a long time - removing "
-                    << (*it)->nodeName() << std::endl;
+                    << (*it)->nodeName() << '\n';
             CompileServer * old = *it;
             ++it;
             handle_end(old);
@@ -891,7 +889,7 @@ prune_servers()
 
         if ((now - (*it)->last_talk) >= MAX_SCHEDULER_PING) {
             if ((*it)->maxJobs() >= 0) {
-                trace() << "send ping " << (*it)->nodeName() << std::endl;
+                trace() << "send ping " << (*it)->nodeName() << '\n';
                 (*it)->setMaxJobs((*it)->maxJobs() *
                                   -1); // better not give it away
 
@@ -907,7 +905,7 @@ prune_servers()
             }
 
             // R.I.P.
-            trace() << "removing " << (*it)->nodeName() << std::endl;
+            trace() << "removing " << (*it)->nodeName() << '\n';
             CompileServer * old = *it;
             ++it;
             handle_end(old);
@@ -920,7 +918,7 @@ prune_servers()
 #if DEBUG_LEVEL > 1
         if ((random() % 400) < 0) {
             // R.I.P.
-            trace() << "FORCED removing " << (*it)->nodeName() << std::endl;
+            trace() << "FORCED removing " << (*it)->nodeName() << '\n';
             CompileServer * old = *it;
             ++it;
             handle_end(old);
@@ -975,14 +973,13 @@ empty_queue()
                     !cs->matches(job->preferredHost()))
                     continue;
                 if (cs->is_eligible_ever(job)) {
-                    trace() << "No suitable host found, delaying" << std::endl;
+                    trace() << "No suitable host found, delaying\n";
                     return false;
                 }
             }
             // This means that there's nobody who could possibly handle the job,
             // so there's no point in delaying.
-            log_info() << "No suitable host found, assigning submitter"
-                       << std::endl;
+            log_info() << "No suitable host found, assigning submitter\n";
             use_cs = job->submitter();
             break;
         }
@@ -1030,7 +1027,7 @@ empty_queue()
     if (IS_PROTOCOL_37(job->submitter()) && use_cs == job->submitter()) {
         NoCSMsg m2(job->id(), job->localClientId());
         if (!job->submitter()->sendMsg(m2)) {
-            trace() << "failed to deliver job " << job->id() << std::endl;
+            trace() << "failed to deliver job " << job->id() << '\n';
             handle_end(job->submitter()); // will care for the rest
             return true;
         }
@@ -1043,7 +1040,7 @@ empty_queue()
                     job->localClientId(),
                     matched_job_id);
         if (!job->submitter()->sendMsg(m2)) {
-            trace() << "failed to deliver job " << job->id() << std::endl;
+            trace() << "failed to deliver job " << job->id() << '\n';
             handle_end(job->submitter()); // will care for the rest
             return true;
         }
@@ -1052,10 +1049,10 @@ empty_queue()
 #if DEBUG_LEVEL >= 0
     if (!gotit) {
         trace() << "put " << job->id() << " in joblist of "
-                << use_cs->nodeName() << " (will install now)" << std::endl;
+                << use_cs->nodeName() << " (will install now)\n";
     } else {
         trace() << "put " << job->id() << " in joblist of "
-                << use_cs->nodeName() << std::endl;
+                << use_cs->nodeName() << '\n';
     }
 #endif
     use_cs->appendJob(job);
@@ -1121,7 +1118,7 @@ handle_login(CompileServer * cs, const LoginMsg & msg)
     for (auto it = msg.envs.begin(); it != msg.envs.end(); ++it) {
         dbg << it->second << "(" << it->first << "), ";
     }
-    dbg << "]" << std::endl;
+    dbg << "]\n";
 
     handle_monitor_stats(cs);
 
@@ -1156,7 +1153,7 @@ handle_relogin(CompileServer * cs, const LoginMsg & msg)
         dbg << it->second << "(" << it->first << "), ";
     }
 
-    dbg << "]" << std::endl;
+    dbg << "]\n";
 
     /* Configure the daemon */
     if (IS_PROTOCOL_24(cs)) {
@@ -1183,15 +1180,14 @@ handle_job_begin(CompileServer * cs, const JobBeginMsg & msg)
 {
     auto job_it = jobs.find(msg.job_id);
     if (job_it == jobs.end()) {
-        trace() << "handle_job_begin: no valid job id " << msg.job_id
-                << std::endl;
+        trace() << "handle_job_begin: no valid job id " << msg.job_id << '\n';
         return false;
     }
 
     Job * job = job_it->second;
 
     if (job->server() != cs) {
-        trace() << "that job isn't handled by " << cs->name << std::endl;
+        trace() << "that job isn't handled by " << cs->name << '\n';
         return false;
     }
 
@@ -1206,7 +1202,7 @@ handle_job_begin(CompileServer * cs, const JobBeginMsg & msg)
             << " client=" << job->submitter()->nodeName() << "("
             << job->targetPlatform() << ")"
             << " server=" << job->server()->nodeName() << "("
-            << job->server()->hostPlatform() << ")" << std::endl;
+            << job->server()->hostPlatform() << ")\n";
 #endif
 
     return true;
@@ -1226,12 +1222,11 @@ handle_job_done(CompileServer * cs, JobDoneMsg & msg)
             auto * job = id_and_job.second;
             trace() << "looking for waitcs " << job->server() << " "
                     << job->submitter() << " " << cs << " " << job->state()
-                    << " " << job->localClientId() << " " << clientId
-                    << std::endl;
+                    << " " << job->localClientId() << " " << clientId << '\n';
 
             if (job->server() == nullptr && job->submitter() == cs &&
                 job->localClientId() == clientId) {
-                trace() << "STOP (WAITFORCS) FOR " << id << std::endl;
+                trace() << "STOP (WAITFORCS) FOR " << id << '\n';
                 j = job;
                 msg.setJobId(j->id()); // Now we know the job's id.
 
@@ -1264,15 +1259,15 @@ handle_job_done(CompileServer * cs, JobDoneMsg & msg)
     }
 
     if (j == nullptr) {
-        trace() << "job ID not present " << msg.job_id << std::endl;
+        trace() << "job ID not present " << msg.job_id << '\n';
         return false;
     }
 
     if (msg.isFromServer() && (j->server() != cs)) {
         log_info() << "the server isn't the same for job " << msg.job_id
-                   << std::endl;
-        log_info() << "server: " << j->server()->nodeName() << std::endl;
-        log_info() << "msg came from: " << cs->nodeName() << std::endl;
+                   << '\n';
+        log_info() << "server: " << j->server()->nodeName() << '\n';
+        log_info() << "msg came from: " << cs->nodeName() << '\n';
         // the daemon is not following matz's rules: kick him
         handle_end(cs);
         return false;
@@ -1280,9 +1275,9 @@ handle_job_done(CompileServer * cs, JobDoneMsg & msg)
 
     if (!msg.isFromServer() && (j->submitter() != cs)) {
         log_info() << "the submitter isn't the same for job " << msg.job_id
-                   << std::endl;
-        log_info() << "submitter: " << j->submitter()->nodeName() << std::endl;
-        log_info() << "msg came from: " << cs->nodeName() << std::endl;
+                   << '\n';
+        log_info() << "submitter: " << j->submitter()->nodeName() << '\n';
+        log_info() << "msg came from: " << cs->nodeName() << '\n';
         // the daemon is not following matz's rules: kick him
         handle_end(cs);
         return false;
@@ -1310,10 +1305,9 @@ handle_job_done(CompileServer * cs, JobDoneMsg & msg)
 
         dbg << " real=" << msg.real_msec << " user=" << msg.user_msec
             << " sys=" << msg.sys_msec << " pfaults=" << msg.pfaults
-            << " server=" << j->server()->nodeName() << std::endl;
+            << " server=" << j->server()->nodeName() << '\n';
     } else {
-        trace() << "END " << msg.job_id << " status=" << msg.exitcode
-                << std::endl;
+        trace() << "END " << msg.job_id << " status=" << msg.exitcode << '\n';
     }
 
     if (j->server()) {
@@ -1374,7 +1368,7 @@ handle_blacklist_host_env(CompileServer * cs, const BlacklistHostEnvMsg & msg)
 
     if (cs_it != end) {
         trace() << "Blacklisting host " << msg.hostname << " for environment "
-                << msg.environment << " (" << msg.target << ")" << std::endl;
+                << msg.environment << " (" << msg.target << ")\n";
         cs->blacklistCompileServer(*cs_it,
                                    make_pair(msg.target, msg.environment));
     }
@@ -1396,7 +1390,7 @@ try_login(CompileServer * cs, const Msg & msg)
                               },
                               [](const auto & m) {
                                   log_info() << "Invalid first message "
-                                             << message_type(m) << std::endl;
+                                             << message_type(m) << '\n';
                                   return false;
                               }),
                           msg);
@@ -1413,7 +1407,7 @@ try_login(CompileServer * cs, const Msg & msg)
 bool
 handle_end(CompileServer * toremove)
 {
-    trace() << "Handle_end " << toremove << std::endl;
+    trace() << "Handle_end " << toremove << '\n';
 
     switch (toremove->type()) {
         case CompileServer::MONITOR:
@@ -1421,11 +1415,11 @@ handle_end(CompileServer * toremove)
                    monitors.end());
             monitors.remove(toremove);
 #if DEBUG_LEVEL > 1
-            trace() << "handle_end(moni) " << monitors.size() << std::endl;
+            trace() << "handle_end(moni) " << monitors.size() << '\n';
 #endif
             break;
         case CompileServer::DAEMON:
-            log_info() << "remove daemon " << toremove->nodeName() << std::endl;
+            log_info() << "remove daemon " << toremove->nodeName() << '\n';
 
             notify_monitors(MonStatsMsg(toremove->hostId(), "State:Offline\n"));
 
@@ -1444,8 +1438,7 @@ handle_end(CompileServer * toremove)
                     JobRequestsGroup * l = *it;
 
                     for (auto jit = l->l.begin(); jit != l->l.end(); ++jit) {
-                        trace() << "STOP (DAEMON) FOR " << (*jit)->id()
-                                << std::endl;
+                        trace() << "STOP (DAEMON) FOR " << (*jit)->id() << '\n';
                         notify_monitors(
                             MonJobDoneMsg(JobDoneMsg((*jit)->id(), 255)));
 
@@ -1468,7 +1461,7 @@ handle_end(CompileServer * toremove)
                 Job * job = mit->second;
 
                 if (job->server() == toremove || job->submitter() == toremove) {
-                    trace() << "STOP (DAEMON2) FOR " << mit->first << std::endl;
+                    trace() << "STOP (DAEMON2) FOR " << mit->first << '\n';
                     notify_monitors(MonJobDoneMsg(JobDoneMsg(job->id(), 255)));
 
                     /* If this job is removed because the submitter is removed
@@ -1493,7 +1486,7 @@ handle_end(CompileServer * toremove)
             }
 
             break;
-        default: trace() << "remote end had UNKNOWN type?" << std::endl; break;
+        default: trace() << "remote end had UNKNOWN type?\n"; break;
     }
 
     fd2cs.erase(toremove->fd);
@@ -1549,7 +1542,7 @@ handle_activity(CompileServer * cs)
             },
             [cs](auto & m) {
                 log_info() << "Invalid message type arrived " << message_type(m)
-                           << std::endl;
+                           << '\n';
                 handle_end(cs);
                 return false;
             }),
@@ -1634,7 +1627,7 @@ void
 usage(const char * reason = nullptr)
 {
     if (reason) {
-        std::cerr << reason << std::endl;
+        std::cerr << reason << '\n';
     }
 
     std::cerr << "ICECREAM scheduler " VERSION "\n";
@@ -1649,7 +1642,7 @@ usage(const char * reason = nullptr)
               << "  -u, --user-uid\n"
               << "  -v[v[v]]]\n"
               << "  -r, --persistent-client-connection\n"
-              << std::endl;
+              << '\n';
 
     exit(1);
 }
@@ -1691,7 +1684,7 @@ handle_scheduler_announce(const char *       buf,
             << inet_ntoa(broad_addr.sin_addr) << ":"
             << ntohs(broad_addr.sin_port) << " (version "
             << int(other_protocol_version) << ", netname " << other_netname
-            << ")" << std::endl;
+            << ")\n";
     if (other_protocol_version >= 36) {
         if (other_netname == netname) {
             if (other_protocol_version > PROTOCOL_VERSION ||
@@ -1704,7 +1697,7 @@ handle_scheduler_announce(const char *       buf,
                         << int(other_protocol_version)
                         << ") has announced itself as a preferred"
                            " scheduler, disconnecting all connections."
-                        << std::endl;
+                        << '\n';
                     if (!css.empty() || !monitors.empty()) {
                         while (!css.empty()) {
                             handle_end(css.front());
@@ -1900,7 +1893,7 @@ main(int argc, char * argv[])
     setup_debug(debug_level, logfile);
 
     log_info() << "ICECREAM scheduler " VERSION " starting up, port "
-               << scheduler_port << std::endl;
+               << scheduler_port << '\n';
 
     if (detach) {
         if (daemon(0, 0) != 0) {
@@ -1923,7 +1916,7 @@ main(int argc, char * argv[])
 
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
         log_warning() << "signal(SIGPIPE, ignore) failed: " << strerror(errno)
-                      << std::endl;
+                      << '\n';
         return 1;
     }
 
@@ -1936,7 +1929,7 @@ main(int argc, char * argv[])
     progName = find_basename(progName);
     pidFilePath = std::string(RUNDIR) + "/" + progName + ".pid";
     pidFile.open(pidFilePath.c_str());
-    pidFile << getpid() << std::endl;
+    pidFile << getpid() << '\n';
     pidFile.close();
 
     // Set running flag before activation of signal handlers
@@ -1946,7 +1939,7 @@ main(int argc, char * argv[])
     signal(SIGINT, trigger_exit);
     signal(SIGALRM, trigger_exit);
 
-    log_info() << "scheduler ready" << std::endl;
+    log_info() << "scheduler ready\n";
 
     time_t next_listen = 0;
 
@@ -2054,7 +2047,7 @@ main(int argc, char * argv[])
                 if (remote_fd >= 0) {
                     CompileServer * cs = new CompileServer(
                         remote_fd, (struct sockaddr *)&remote_addr, remote_len);
-                    trace() << "accepted " << cs->name << std::endl;
+                    trace() << "accepted " << cs->name << '\n';
                     cs->last_talk = time(nullptr);
 
                     if (!cs->protocol) { // protocol mismatch
@@ -2179,7 +2172,7 @@ main(int argc, char * argv[])
         log_perror("close failed");
     }
     if (-1 == unlink(pidFilePath.c_str()) && errno != ENOENT) {
-        log_perror("unlink failed") << "\t" << pidFilePath << std::endl;
+        log_perror("unlink failed") << "\t" << pidFilePath << '\n';
     }
     return 0;
 }

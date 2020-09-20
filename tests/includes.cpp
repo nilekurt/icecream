@@ -5,5 +5,5 @@
 void
 f()
 {
-    std::cout << std::endl; // use something included only by includes.h
+    std::cout << '\n'; // use something included only by includes.h
 }

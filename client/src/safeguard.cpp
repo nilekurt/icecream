@@ -71,6 +71,6 @@ dcc_increment_safeguard(SafeguardStep step)
     char value[2] = {(char)(dcc_safeguard_level + step + '0'), '\0'};
     // trace() << "setting safeguard: " << dcc_safeguard_set << endl;
     if (setenv(dcc_safeguard_name, value, 1) == -1) {
-        log_error() << "putenv failed" << std::endl;
+        log_error() << "putenv failed\n";
     }
 }

@@ -355,7 +355,7 @@ build_address_for_interface(struct sockaddr_in & myaddr,
 
     if (!found) {
         log_error() << "No IP address found for interface \""
-                    << interface << "\"" << std::endl;
+                    << interface << "\"\n";
         return false;
     }
 

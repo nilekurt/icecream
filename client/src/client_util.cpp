@@ -85,7 +85,7 @@ dcc_ignore_sigpipe(int val)
 {
     if (signal(SIGPIPE, val ? SIG_IGN : SIG_DFL) == SIG_ERR) {
         log_warning() << "signal(SIGPIPE, " << (val ? "ignore" : "default")
-                      << ") failed: " << strerror(errno) << std::endl;
+                      << ") failed: " << strerror(errno) << '\n';
         return EXIT_DISTCC_FAILED;
     }
 
@@ -140,7 +140,7 @@ dcc_open_lockfile(const std::string & fname, int & plockfd)
 
     if (plockfd == -1 && errno != EEXIST) {
         log_error() << "failed to create " << fname << ": " << strerror(errno)
-                    << std::endl;
+                    << '\n';
         return false;
     }
 
@@ -175,11 +175,11 @@ dcc_lock_host_slot(std::string fname, int lock, bool block)
         case EAGAIN:
         case EACCES: /* HP-UX and Cygwin give this for exclusion */
             if (block)
-                trace() << fname << " is busy" << std::endl;
+                trace() << fname << " is busy\n";
             break;
         default:
             log_error() << "lock " << fname << " failed: " << strerror(errno)
-                        << std::endl;
+                        << '\n';
             break;
     }
 
@@ -217,7 +217,7 @@ dcc_lock_host()
     }
 
     if (mkdir(fname.c_str(), 0700) && errno != EEXIST) {
-        log_perror("mkdir") << "\t" << fname << std::endl;
+        log_perror("mkdir") << "\t" << fname << '\n';
         return false;
     }
 
