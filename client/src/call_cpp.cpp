@@ -215,7 +215,7 @@ call_cpp(CompileJob & job, int fdwrite, int fdread)
         argstxt += ' ';
         argstxt += *it;
     }
-    trace() << "preparing source to send: " << argstxt << std::endl;
+    trace() << "preparing source to send: " << argstxt << '\n';
 
     if (fdwrite != STDOUT_FILENO) {
         /* Ignore failure */

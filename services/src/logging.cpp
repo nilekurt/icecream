@@ -94,7 +94,7 @@ ccache_stream(int fd)
         // As logging is not set up yet, this will log to stderr.
         log_warning() << "UNCACHED_ERR_FD provides an invalid file descriptor, "
                          "using stderr"
-                      << std::endl;
+                      << '\n';
         return &std::cerr; // fd is not valid fd for writting
     }
     static ofdbuf       buf(fd);
@@ -191,7 +191,7 @@ reset_debug_if_needed()
             std::getline(markfile, mark);
             if (!mark.empty()) {
                 assert(logfile_trace != NULL);
-                *logfile_trace << "flush log mark: " << mark << std::endl;
+                *logfile_trace << "flush log mark: " << mark << '\n';
             }
         }
         if (const char * env = std::getenv("ICECC_TEST_LOG_HEADER")) {
@@ -202,9 +202,9 @@ reset_debug_if_needed()
             std::getline(markfile, header3);
             if (!header1.empty()) {
                 assert(logfile_trace != NULL);
-                *logfile_trace << header1 << std::endl;
-                *logfile_trace << header2 << std::endl;
-                *logfile_trace << header3 << std::endl;
+                *logfile_trace << header1 << '\n';
+                *logfile_trace << header2 << '\n';
+                *logfile_trace << header3 << '\n';
             }
         }
     }

@@ -150,11 +150,11 @@ std::string
 CompileServer::can_install(const Job * job, bool ignore_installing) const
 {
     // trace() << "can_install host: '" << cs->host_platform << "' target: '"
-    //         << job->target_platform << "'" << std::endl;
+    //         << job->target_platform << "'\n";
     if (!ignore_installing && busyInstalling()) {
 #if DEBUG_LEVEL > 0
         trace() << nodeName() << " is busy installing since "
-                << time(0) - busyInstalling() << " seconds." << std::endl;
+                << time(0) - busyInstalling() << " seconds.\n";
 #endif
         return std::string();
     }
@@ -200,7 +200,7 @@ CompileServer::is_eligible_ever(const Job * job) const
             << (m_chrootPossible || job->submitter() == this) << ", accepting "
             << m_acceptingInConnection << ", can_install "
             << (can_install(job).size() != 0) << ", check_remote "
-            << check_remote(job) << ")" << std::endl;
+            << check_remote(job) << ")\n";
 #endif
     return eligible;
 }
@@ -217,7 +217,7 @@ CompileServer::is_eligible_now(const Job * job) const
     bool eligible = jobs_okay && load_okay && can_install(job, false).size();
 #if DEBUG_LEVEL > 2
     trace() << nodeName() << " is_eligible_now: " << eligible << " (jobs_okay "
-            << jobs_okay << ", load_okay " << load_okay << ")" << std::endl;
+            << jobs_okay << ", load_okay " << load_okay << ")\n";
 #endif
     return eligible;
 }
@@ -609,7 +609,7 @@ CompileServer::updateInConnectivity(bool acceptingIn)
             m_inConnAttempt = 0;
             trace() << "Client (" << m_nodeName << " " << name << ":"
                     << m_remotePort << ") is accepting incoming connections."
-                    << std::endl;
+                    << '\n';
         }
         m_nextConnTime = time(nullptr) + check_back_time;
         close(m_inFd);
@@ -621,14 +621,14 @@ CompileServer::updateInConnectivity(bool acceptingIn)
                 << "Client (" << m_nodeName << " " << name << ":"
                 << m_remotePort
                 << ") connected but is not able to accept incoming connections."
-                << std::endl;
+                << '\n';
         }
         m_nextConnTime = time(nullptr) + time_offset_table[m_inConnAttempt];
         if (m_inConnAttempt < (table_size - 1))
             m_inConnAttempt++;
         trace() << nodeName() << " failed to accept an incoming connection on "
                 << name << ":" << m_remotePort << " attempting again in "
-                << m_nextConnTime - time(nullptr) << " seconds" << std::endl;
+                << m_nextConnTime - time(nullptr) << " seconds\n";
         close(m_inFd);
         m_inFd = -1;
     }

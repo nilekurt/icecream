@@ -107,14 +107,14 @@ work_it(CompileJob &        j,
         list.push_back("-gsplit-dwarf");
     }
 
-    trace() << "remote compile for file " << j.inputFile() << std::endl;
+    trace() << "remote compile for file " << j.inputFile() << '\n';
 
     std::string argstxt;
     for (auto it = list.begin(); it != list.end(); ++it) {
         argstxt += ' ';
         argstxt += *it;
     }
-    trace() << "remote compile arguments:" << argstxt << std::endl;
+    trace() << "remote compile arguments:" << argstxt << '\n';
 
     int  sock_err[2];
     int  sock_out[2];
@@ -207,7 +207,7 @@ work_it(CompileJob &        j,
             log_perror("setrlimit");
         } else {
             log_info() << "Compile job memory limit set to " << mem_limit
-                       << " megabytes" << std::endl;
+                       << " megabytes\n";
         }
 #endif
 #endif
@@ -317,7 +317,7 @@ work_it(CompileJob &        j,
             argstxt += ' ';
             argstxt += argv[pos];
         }
-        trace() << "final arguments:" << argstxt << std::endl;
+        trace() << "final arguments:" << argstxt << '\n';
 
         close_debug();
 
@@ -415,7 +415,7 @@ work_it(CompileJob &        j,
         if (n == 1) {
             rmsg.status = resultByte;
 
-            log_error() << "compiler did not start" << std::endl;
+            log_error() << "compiler did not start\n";
             error_client(client, "compiler did not start");
             return EXIT_COMPILER_MISSING;
         }
@@ -476,7 +476,7 @@ work_it(CompileJob &        j,
                             [&](auto && /*unused*/) {
                                 log_error() << "protocol error while reading "
                                                "preprocessed file"
-                                            << std::endl;
+                                            << '\n';
                                 input_complete = true;
                                 return_value = EXIT_IO_ERROR;
                                 client_fd = -1;
@@ -487,8 +487,7 @@ work_it(CompileJob &        j,
                 }
             } else if (client->eof()) {
                 log_warning()
-                    << "unexpected EOF while reading preprocessed file"
-                    << std::endl;
+                    << "unexpected EOF while reading preprocessed file\n";
                 input_complete = true;
                 return_value = EXIT_IO_ERROR;
                 client_fd = -1;
@@ -556,8 +555,8 @@ work_it(CompileJob &        j,
             case 0:
 
                 if (!input_complete) {
-                    log_warning() << "timeout while reading preprocessed file"
-                                  << std::endl;
+                    log_warning()
+                        << "timeout while reading preprocessed file\n";
                     kill(pid, SIGTERM); // Won't need it any more ...
                     return_value = EXIT_IO_ERROR;
                     client_fd = -1;
@@ -701,8 +700,7 @@ work_it(CompileJob &        j,
                                 << "Remote compilation failed, presumably "
                                    "because "
                                    "of running out of memory (exit code "
-                                << shell_exit_status(status) << ")"
-                                << std::endl;
+                                << shell_exit_status(status) << ")\n";
                             return EXIT_OUT_OF_MEMORY;
                         }
 
@@ -720,8 +718,7 @@ work_it(CompileJob &        j,
                                 << "Remote compilation failed, presumably "
                                    "because "
                                    "of running out of disk space (exit code "
-                                << shell_exit_status(status) << ")"
-                                << std::endl;
+                                << shell_exit_status(status) << ")\n";
                             return EXIT_IO_ERROR;
                         }
 #endif
@@ -748,17 +745,16 @@ work_it(CompileJob &        j,
                         if (rmsg.status != 0) {
                             log_warning()
                                 << "Remote compilation exited with exit code "
-                                << shell_exit_status(status) << std::endl;
+                                << shell_exit_status(status) << '\n';
                         } else {
-                            log_info()
-                                << "Remote compilation completed with "
-                                   "exit code "
-                                << shell_exit_status(status) << std::endl;
+                            log_info() << "Remote compilation completed with "
+                                          "exit code "
+                                       << shell_exit_status(status) << '\n';
                         }
                     } else {
                         log_warning()
                             << "Remote compilation aborted with exit code "
-                            << shell_exit_status(status) << std::endl;
+                            << shell_exit_status(status) << '\n';
                     }
 
                     return return_value;

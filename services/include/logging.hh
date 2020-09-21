@@ -129,7 +129,7 @@ inline std::ostream &
 log_errno(const char * prefix, int tmp_errno)
 {
     return log_error() << prefix << "(Error: " << strerror(tmp_errno) << ")"
-                       << std::endl;
+                       << '\n';
 }
 
 inline std::ostream &
@@ -148,7 +148,7 @@ inline std::ostream &
 log_errno_trace(const char * prefix, int tmp_errno)
 {
     return trace() << prefix << "(Error: " << strerror(tmp_errno) << ")"
-                   << std::endl;
+                   << '\n';
 }
 
 inline std::ostream &

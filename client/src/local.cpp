@@ -76,7 +76,7 @@ compiler_path_lookup_helper(const std::string & compiler,
 
                 if (ret != 0) {
                     log_error()
-                        << "resolve_link failed " << strerror(ret) << std::endl;
+                        << "resolve_link failed " << strerror(ret) << '\n';
                     continue;
                 }
 
@@ -107,7 +107,7 @@ compiler_path_lookup_helper(const std::string & compiler,
     }
 
     if (best_match.empty()) {
-        log_error() << "couldn't find any " << compiler << std::endl;
+        log_error() << "couldn't find any " << compiler << '\n';
     }
 
     return best_match;
@@ -343,7 +343,7 @@ build_local(CompileJob & job, MsgChannel * local_daemon, struct rusage * used)
 
     if (compiler_name.empty()) {
         log_error() << "could not find " << job.compilerName() << " in PATH."
-                    << std::endl;
+                    << '\n';
         return EXIT_NO_SUCH_FILE;
     }
 
@@ -372,11 +372,11 @@ build_local(CompileJob & job, MsgChannel * local_daemon, struct rusage * used)
 
     argv.push_back(nullptr);
 
-    trace() << "invoking:" << argstxt << std::endl;
+    trace() << "invoking:" << argstxt << '\n';
 
     if (!local_daemon) {
         if (!dcc_lock_host()) {
-            log_error() << "can't lock for local job" << std::endl;
+            log_error() << "can't lock for local job\n";
             return EXIT_DISTCC_FAILED;
         }
     }

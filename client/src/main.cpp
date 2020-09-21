@@ -141,10 +141,9 @@ dcc_client_signalled(int whichsig)
 {
     if (!local) {
 #ifdef HAVE_STRSIGNAL
-        log_info() << rs_program_name << ": " << strsignal(whichsig)
-                   << std::endl;
+        log_info() << rs_program_name << ": " << strsignal(whichsig) << '\n';
 #else
-        log_info() << "terminated by signal " << whichsig << std::endl;
+        log_info() << "terminated by signal " << whichsig << '\n';
 #endif
         //    dcc_cleanup_tempfiles();
     }
@@ -185,7 +184,7 @@ create_native(char ** args)
         } else {
             compiler = compiler_path_lookup(get_c_compiler(args[0]));
             if (compiler.empty()) {
-                log_error() << "compiler not found" << std::endl;
+                log_error() << "compiler not found\n";
                 return 1;
             }
             ++extrafiles;
@@ -244,7 +243,7 @@ get_local_daemon()
     } else {
         local_daemon = Service::createChannel(getenv("ICECC_TEST_SOCKET"));
         if (!local_daemon) {
-            log_error() << "test socket error" << std::endl;
+            log_error() << "test socket error\n";
             exit(EXIT_TEST_SOCKET_ERROR);
         }
     }
@@ -260,9 +259,9 @@ debug_arguments(int argc, char ** argv, bool original)
         argstxt += argv[i];
     }
     if (original) {
-        trace() << "invoked as: " << argstxt << std::endl;
+        trace() << "invoked as: " << argstxt << '\n';
     } else {
-        trace() << "expanded as: " << argstxt << std::endl;
+        trace() << "expanded as: " << argstxt << '\n';
     }
 }
 
@@ -414,11 +413,11 @@ main(int argc, char ** argv)
 
     if (sg_level >= SAFEGUARD_MAX_LEVEL) {
         log_error() << "icecream seems to have invoked itself recursively!"
-                    << std::endl;
+                    << '\n';
         return EXIT_RECURSION;
     }
     if (sg_level > 0) {
-        log_info() << "recursive invocation from icerun" << std::endl;
+        log_info() << "recursive invocation from icerun\n";
     }
 
     /* Ignore SIGPIPE; we consistently check error codes and will
@@ -454,7 +453,7 @@ main(int argc, char ** argv)
     }
 
     if (!local_daemon) {
-        log_warning() << "no local daemon found" << std::endl;
+        log_warning() << "no local daemon found\n";
         return build_local(job, nullptr);
     }
 
@@ -475,8 +474,8 @@ main(int argc, char ** argv)
             if (stat(file.c_str(), &st) == 0) {
                 extrafiles.push_back(file);
             } else {
-                log_warning() << "File in ICECC_EXTRAFILES not found: " << file
-                              << std::endl;
+                log_warning()
+                    << "File in ICECC_EXTRAFILES not found: " << file << '\n';
                 local = true;
                 break;
             }
@@ -505,7 +504,7 @@ main(int argc, char ** argv)
             }
         } else if (!extrafiles.empty() && !IS_PROTOCOL_32(local_daemon)) {
             log_warning() << "Local daemon is too old to handle extra files."
-                          << std::endl;
+                          << '\n';
             local = true;
         } else {
             Msg         umsg{};
@@ -518,12 +517,11 @@ main(int argc, char ** argv)
             if (const char * icecc_env_compression =
                     getenv("ICECC_ENV_COMPRESSION"))
                 env_compression = icecc_env_compression;
-            trace() << "asking for native environment for " << compiler
-                    << std::endl;
+            trace() << "asking for native environment for " << compiler << '\n';
             if (!local_daemon->sendMsg(
                     GetNativeEnvMsg(compiler, extrafiles, env_compression))) {
                 log_warning()
-                    << "failed to write get native environment" << std::endl;
+                    << "failed to write get native environment\n";
                 local = true;
             } else {
                 // the timeout is high because it creates the native version
@@ -544,7 +542,7 @@ main(int argc, char ** argv)
                        "Set $ICECC_VERSION to an icecc environment.\n";
             } else {
                 envs.push_back(make_pair(job.targetPlatform(), native));
-                log_info() << "native " << native << std::endl;
+                log_info() << "native " << native << '\n';
             }
         }
 
@@ -556,11 +554,10 @@ main(int argc, char ** argv)
 
         for (auto it = envs.begin(); it != envs.end(); ++it) {
             trace() << "env: " << it->first << " '" << it->second << "'"
-                    << std::endl;
+                    << '\n';
 
             if (::access(it->second.c_str(), R_OK) < 0) {
-                log_error()
-                    << "can't read environment " << it->second << std::endl;
+                log_error() << "can't read environment " << it->second << '\n';
                 local = true;
             }
         }
@@ -590,18 +587,18 @@ main(int argc, char ** argv)
             // it's more obvious why the cpp output is there (possibly) twice
             if (error.errorCode == 103)
                 log_error() << "local build forced by remote exception: "
-                            << error.what() << std::endl;
+                            << error.what() << '\n';
             else
                 log_warning() << "local build forced by remote exception: "
-                              << error.what() << std::endl;
+                              << error.what() << '\n';
             local = true;
         } catch (const ClientError & error) {
             if (remote_daemon.size()) {
                 log_error() << "got exception " << error.what() << " ("
-                            << remote_daemon.c_str() << ") " << std::endl;
+                            << remote_daemon.c_str() << ") \n";
             } else {
                 log_error() << "got exception " << error.what()
-                            << " (this should be an exception!)" << std::endl;
+                            << " (this should be an exception!)\n";
             }
 
 #if 0
@@ -620,7 +617,7 @@ main(int argc, char ** argv)
             delete local_daemon;
             local_daemon = get_local_daemon();
             if (!local_daemon) {
-                log_warning() << "no local daemon found" << std::endl;
+                log_warning() << "no local daemon found\n";
                 return build_local(job, nullptr);
             }
         }

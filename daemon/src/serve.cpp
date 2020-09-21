@@ -76,7 +76,7 @@ write_output_file(const std::string & file, MsgChannel * client)
         obj_fd = open(file.c_str(), O_RDONLY | O_LARGEFILE);
 
         if (obj_fd == -1) {
-            log_error() << "open failed" << std::endl;
+            log_error() << "open failed\n";
             error_client(client, "open of object file failed");
             throw DaemonException(EXIT_DISTCC_FAILED);
         }
@@ -96,15 +96,14 @@ write_output_file(const std::string & file, MsgChannel * client)
 
             if (!bytes) {
                 if (!client->sendMsg(EndMsg())) {
-                    log_info() << "write of obj end failed " << std::endl;
+                    log_info() << "write of obj end failed \n";
                     throw DaemonException(EXIT_DISTCC_FAILED);
                 }
                 break;
             }
 
             if (!client->sendMsg(FileChunkMsg(buffer, bytes))) {
-                log_info() << "write of obj chunk failed " << bytes
-                           << std::endl;
+                log_info() << "write of obj chunk failed " << bytes << '\n';
                 throw DaemonException(EXIT_DISTCC_FAILED);
             }
         } while (1);
@@ -163,7 +162,7 @@ handle_connection(const std::string & basedir,
     int niceval = nice(nice_level);
     if (niceval == -1) {
         log_warning() << "failed to set nice value: " << strerror(errno)
-                      << std::endl;
+                      << '\n';
     }
 
     std::string  tmp_path, obj_file, dwo_file;
@@ -184,7 +183,7 @@ handle_connection(const std::string & basedir,
                 log_error()
                     << "I don't have environment " << job->environmentVersion()
                     << "(" << job->targetPlatform() << ") " << job->jobID()
-                    << std::endl;
+                    << '\n';
                 // The scheduler didn't listen to us, or maybe something has
                 // removed the files.
                 throw DaemonException(EXIT_COMPILER_MISSING);
@@ -194,14 +193,14 @@ handle_connection(const std::string & basedir,
         } else {
             error_client(client, "empty environment");
             log_error() << "Empty environment (" << job->targetPlatform()
-                        << ") " << job->jobID() << std::endl;
+                        << ") " << job->jobID() << '\n';
             throw DaemonException(EXIT_DISTCC_FAILED);
         }
 
         if (::access(&_PATH_TMP[1], W_OK) < 0) {
             error_client(client, "can't write to " _PATH_TMP);
             log_error() << "can't write into " << _PATH_TMP << " "
-                        << strerror(errno) << std::endl;
+                        << strerror(errno) << '\n';
             throw DaemonException(-1);
         }
 
@@ -328,7 +327,7 @@ handle_connection(const std::string & basedir,
             rmsg.have_dwo_file = false;
 
         if (!client->sendMsg(rmsg)) {
-            log_info() << "write of result failed" << std::endl;
+            log_info() << "write of result failed\n";
             throw DaemonException(EXIT_DISTCC_FAILED);
         }
 
@@ -365,12 +364,12 @@ handle_connection(const std::string & basedir,
 
     if (!obj_file.empty()) {
         if (-1 == unlink(obj_file.c_str()) && errno != ENOENT) {
-            log_perror("unlink failure") << "\t" << obj_file << std::endl;
+            log_perror("unlink failure") << "\t" << obj_file << '\n';
         }
     }
     if (!dwo_file.empty()) {
         if (-1 == unlink(dwo_file.c_str()) && errno != ENOENT) {
-            log_perror("unlink failure") << "\t" << dwo_file << std::endl;
+            log_perror("unlink failure") << "\t" << dwo_file << '\n';
         }
     }
     if (!tmp_path.empty()) {
