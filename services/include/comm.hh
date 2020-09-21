@@ -25,8 +25,8 @@
 #ifndef _COMM_HH_
 #define _COMM_HH_
 
-#include "extensions.hh"
 #include "services_job.hh"
+#include "variant.hh"
 #include "visitor.hh"
 
 #ifdef __linux__
@@ -1164,7 +1164,7 @@ inline const char *
 message_type(const Msg & msg)
 {
     return ext::visit(
-        make_visitor([](const auto & m) { return message_type(m); }), msg);
+        ext::make_visitor([](const auto & m) { return message_type(m); }), msg);
 }
 
 class MsgChannel {

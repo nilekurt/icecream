@@ -1384,7 +1384,7 @@ handle_blacklist_host_env(CompileServer * cs, const BlacklistHostEnvMsg & msg)
 bool
 try_login(CompileServer * cs, const Msg & msg)
 {
-    bool ret = ext::visit(make_visitor(
+    bool ret = ext::visit(ext::make_visitor(
                               [cs](const LoginMsg & m) {
                                   cs->setType(CompileServer::DAEMON);
                                   return handle_login(cs, m);
@@ -1518,40 +1518,41 @@ handle_activity(CompileServer * cs)
     }
 
     return ext::visit(
-        make_visitor([cs](JobBeginMsg & m) { return handle_job_begin(cs, m); },
-                     [cs](JobDoneMsg & m) { return handle_job_done(cs, m); },
-                     [cs](PingMsg & /*unused*/) {
-                         handle_ping(cs);
-                         return true;
-                     },
-                     [cs](StatsMsg & m) { return handle_stats(cs, m); },
-                     [cs](EndMsg & /*unused*/) {
-                         handle_end(cs);
-                         return false;
-                     },
-                     [cs](JobLocalBeginMsg & m) {
-                         handle_job_local_begin(cs, m);
-                         return true;
-                     },
-                     [cs](JobLocalDoneMsg & m) {
-                         handle_job_local_done(cs, m);
-                         return true;
-                     },
-                     [cs](LoginMsg & m) {
-                         handle_relogin(cs, m);
-                         return true;
-                     },
-                     [cs](GetCSMsg & m) { return handle_cs_request(cs, m); },
-                     [cs](BlacklistHostEnvMsg & m) {
-                         handle_blacklist_host_env(cs, m);
-                         return true;
-                     },
-                     [cs](auto & m) {
-                         log_info() << "Invalid message type arrived "
-                                    << message_type(m) << std::endl;
-                         handle_end(cs);
-                         return false;
-                     }),
+        ext::make_visitor(
+            [cs](JobBeginMsg & m) { return handle_job_begin(cs, m); },
+            [cs](JobDoneMsg & m) { return handle_job_done(cs, m); },
+            [cs](PingMsg & /*unused*/) {
+                handle_ping(cs);
+                return true;
+            },
+            [cs](StatsMsg & m) { return handle_stats(cs, m); },
+            [cs](EndMsg & /*unused*/) {
+                handle_end(cs);
+                return false;
+            },
+            [cs](JobLocalBeginMsg & m) {
+                handle_job_local_begin(cs, m);
+                return true;
+            },
+            [cs](JobLocalDoneMsg & m) {
+                handle_job_local_done(cs, m);
+                return true;
+            },
+            [cs](LoginMsg & m) {
+                handle_relogin(cs, m);
+                return true;
+            },
+            [cs](GetCSMsg & m) { return handle_cs_request(cs, m); },
+            [cs](BlacklistHostEnvMsg & m) {
+                handle_blacklist_host_env(cs, m);
+                return true;
+            },
+            [cs](auto & m) {
+                log_info() << "Invalid message type arrived " << message_type(m)
+                           << std::endl;
+                handle_end(cs);
+                return false;
+            }),
         msg);
 }
 

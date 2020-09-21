@@ -28,6 +28,7 @@
 #include "exitcode.h"
 #include "ggc.hh"
 #include "logging.hh"
+#include "optional.hh"
 #include "pipes.h"
 #include "platform.hh"
 #include "services_util.hh"
@@ -451,7 +452,7 @@ work_it(CompileJob &        j,
                     maybe_fcmsg.reset();
                 } else {
                     ext::visit(
-                        make_visitor(
+                        ext::make_visitor(
                             [&](EndMsg && /*unused*/) {
                                 input_complete = true;
 
