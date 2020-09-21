@@ -1252,7 +1252,7 @@ Daemon::handle_file_chunk_env(Client * client, const Msg & msg)
     assert(client->pipe_to_child >= 0);
 
     return ext::visit(
-        make_visitor(
+        ext::make_visitor(
             [this, client](const FileChunkMsg & m) {
                 ssize_t len = m.buffer.size();
                 off_t   off = 0;
@@ -2128,7 +2128,7 @@ Daemon::handle_activity(Client * client)
 
     // @TODO: Handle with overloading
     return ext::visit(
-        make_visitor(
+        ext::make_visitor(
             [this, client](GetNativeEnvMsg & m) {
                 return handle_get_native_env(client, m);
             },
@@ -2297,7 +2297,7 @@ Daemon::answer_client_requests()
                 }
 
                 ext::visit(
-                    make_visitor(
+                    ext::make_visitor(
                         [this, &ret](const PingMsg & /*unused*/) {
                             if (!IS_PROTOCOL_27(scheduler)) {
                                 ret = !send_scheduler(PingMsg{});

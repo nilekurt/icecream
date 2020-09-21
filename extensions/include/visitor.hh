@@ -1,6 +1,8 @@
 #ifndef _VISITOR_HH_
 #define _VISITOR_HH_
 
+namespace ext {
+
 namespace detail {
 
 template<typename... Ts>
@@ -33,5 +35,7 @@ make_visitor(Ts &&... ts) -> detail::Visitor<Ts...>
 {
     return detail::Visitor<Ts...>(std::forward<Ts>(ts)...);
 }
+
+} // namespace ext
 
 #endif // _VISITOR_HH_

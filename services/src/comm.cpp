@@ -1382,7 +1382,7 @@ MsgChannel::getMsg(int timeout, bool eofAllowed)
 
     auto msg = it->second();
 
-    bool fail = ext::visit(make_visitor(
+    bool fail = ext::visit(ext::make_visitor(
                                [this](ext::monostate & /*unused*/) {
                                    trace() << "no message type" << std::endl;
                                    setError();
@@ -1428,7 +1428,7 @@ MsgChannel::sendMsg(const Msg & msg, int flags)
     // Length placeholder
     *this << static_cast<uint32_t>(0);
 
-    bool fail = ext::visit(make_visitor(
+    bool fail = ext::visit(ext::make_visitor(
                                [this](const ext::monostate & /*unused*/) {
                                    trace() << "no message type" << std::endl;
                                    setError();
