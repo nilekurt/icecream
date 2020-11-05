@@ -35,7 +35,7 @@ extern "C" {
 #include <string>
 
 class MsgChannel;
-class CompileResultMsg;
+struct CompileResultMsg;
 
 namespace JobStatistics {
 enum job_stat_fields

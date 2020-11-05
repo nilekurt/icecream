@@ -27,7 +27,7 @@
 
 #include <string>
 
-class CompileJob;
+struct CompileJob;
 class MsgChannel;
 
 extern int nice_level;
