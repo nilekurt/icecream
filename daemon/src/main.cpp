@@ -751,8 +751,7 @@ Daemon::setup_listen_unix_fd()
                     sizeof(myaddr.sun_path) - 1);
             myaddr.sun_path[sizeof(myaddr.sun_path) - 1] = '\0';
             if (default_socket.length() > sizeof(myaddr.sun_path) - 1) {
-                log_error()
-                    << "default socket path too long for sun_path\n";
+                log_error() << "default socket path too long for sun_path\n";
             }
             if (-1 == unlink(myaddr.sun_path) && errno != ENOENT) {
                 log_perror("unlink failed") << "\t" << myaddr.sun_path << '\n';
@@ -2308,7 +2307,7 @@ Daemon::answer_client_requests()
                         [this, &ret](const ConfCSMsg & m) {
                             ret = handle_cs_conf(m);
                         },
-                        [this, &ret](const auto & m) {
+                        [&ret](const auto & m) {
                             log_error() << "unknown scheduler type "
                                         << message_type(m) << '\n';
                             ret = 1;

@@ -28,7 +28,7 @@
 
 #include <string>
 
-class CompileJob;
+struct CompileJob;
 
 int
 set_cloexec_flag(int desc, int value);

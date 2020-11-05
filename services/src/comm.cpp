@@ -313,6 +313,7 @@ open_send_broadcast(int port, const char * buf, int size)
                            << " for broadcast\n";
                 continue;
             }
+
         } else {
             if (ntohl(
                     ((struct sockaddr_in *)addr->ifa_addr)->sin_addr.s_addr) !=
@@ -633,8 +634,7 @@ MsgChannel::flushWritebuf(bool blocking)
                     continue;
                 }
                 if (ready == 0) {
-                    log_error()
-                        << "timed out while trying to send data\n";
+                    log_error() << "timed out while trying to send data\n";
                 }
 
                 /* Timeout or real error --> error.  */
