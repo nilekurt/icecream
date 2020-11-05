@@ -37,8 +37,6 @@
 
 #include "logging.hh"
 
-const int SafeguardMaxLevel = 2;
-
 namespace {
 
 const char dcc_safeguard_name[] = "_ICECC_SAFEGUARD";
