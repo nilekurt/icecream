@@ -2292,7 +2292,7 @@ Daemon::answer_client_requests()
                     ext::make_visitor(
                         [this, &ret](const PingMsg & /*unused*/) {
                             if (!IS_PROTOCOL_27(scheduler)) {
-                                return !send_scheduler(PingMsg{});
+                                ret = !send_scheduler(PingMsg{});
                             }
                         },
                         [this, &ret](const GetInternalStatusMsg & /*unused*/) {
