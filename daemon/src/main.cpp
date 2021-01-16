@@ -512,8 +512,29 @@ struct Daemon {
     unsigned int current_kids;
 
     Daemon()
+        : envbasedir{"/var/tmp/icecc-envs"},
+          warn_icecc_user_errno{0},
+          tcp_listen_fd{-1},
+          tcp_listen_local_fd{-1},
+          unix_listen_fd{-1},
+          noremote{false},
+          custom_nodename{false},
+          cache_size{0},
+          new_client_id{0},
+          next_scheduler_connect{0},
+          icecream_load{0},
+          icecream_usage{0, 0},
+          current_load{-1000},
+          num_cpus{0},
+          scheduler{nullptr},
+          discover{nullptr},
+          scheduler_port{8765},
+          daemon_interface{""},
+          daemon_port{10245},
+          max_scheduler_pong{MAX_SCHEDULER_PONG},
+          max_scheduler_ping{MAX_SCHEDULER_PING},
+          current_kids{0}
     {
-        warn_icecc_user_errno = 0;
         if (getuid() == 0) {
             struct passwd * pw = getpwnam("icecc");
 
@@ -531,28 +552,6 @@ struct Daemon {
             user_uid = getuid();
             user_gid = getgid();
         }
-
-        envbasedir = "/var/tmp/icecc-envs";
-        tcp_listen_fd = -1;
-        tcp_listen_local_fd = -1;
-        unix_listen_fd = -1;
-        new_client_id = 0;
-        next_scheduler_connect = 0;
-        cache_size = 0;
-        noremote = false;
-        custom_nodename = false;
-        icecream_load = 0;
-        icecream_usage.tv_sec = icecream_usage.tv_usec = 0;
-        current_load = -1000;
-        num_cpus = 0;
-        scheduler = nullptr;
-        discover = nullptr;
-        scheduler_port = 8765;
-        daemon_interface = "";
-        daemon_port = 10245;
-        max_scheduler_pong = MAX_SCHEDULER_PONG;
-        max_scheduler_ping = MAX_SCHEDULER_PING;
-        current_kids = 0;
     }
 
     ~Daemon()
