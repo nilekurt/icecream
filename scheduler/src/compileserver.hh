@@ -47,8 +47,7 @@ public:
     {
         UNKNOWN,
         DAEMON,
-        MONITOR,
-        LINE
+        MONITOR
     };
 
     CompileServer(const int fd, struct sockaddr * addr, const socklen_t len);

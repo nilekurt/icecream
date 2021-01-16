@@ -53,42 +53,108 @@ extern "C" {
 #include <algorithm>
 #include <atomic>
 #include <fstream>
+#include <unordered_map>
 
 /* TODO:
-   * leak check
-   * are all filedescs closed when done?
-   * simplify lifetime of the various structures (Jobs/Channels/CompileServers
-   know of each other and sometimes take over ownership)
+ * - leak check
+ * - are all filedescs closed when done?
+ * - simplify lifetime of the various structures (Jobs/Channels/CompileServers
+ *   know of each other and sometimes take over ownership)
  */
 
 /* TODO:
-  - iron out differences in code size between architectures
-   + ia64/i686: 1.63
-   + x86_64/i686: 1.48
-   + ppc/i686: 1.22
-   + ppc64/i686: 1.59
-  (missing data for others atm)
-*/
+ * - iron out differences in code size between architectures
+ *  + ia64/i686: 1.63
+ *  + x86_64/i686: 1.48
+ *  + ppc/i686: 1.22
+ *  + ppc64/i686: 1.59
+ *  (missing data for others atm)
+ */
 
 /* The typical flow of messages for a remote job should be like this:
-     prereq: daemon is connected to scheduler
-     * client does GET_CS
-     * request gets queued
-     * request gets handled
-     * scheduler sends USE_CS
-     * client asks remote daemon
-     * daemon sends JOB_BEGIN
-     * client sends END + closes connection
-     * daemon sends JOB_DONE (this can be swapped with the above one)
-   This means, that iff the client somehow closes the connection we can and
-   must remove all traces of jobs resulting from that client in all lists.
+ *   prereq: daemon is connected to scheduler
+ *   1. client does GET_CS
+ *   2. request gets queued
+ *   3. request gets handled
+ *   4. scheduler sends USE_CS
+ *   5. client asks remote daemon
+ *   6. daemon sends JOB_BEGIN
+ *   7. client sends END + closes connection
+ *   8. daemon sends JOB_DONE (this can be swapped with the above one)
+ *  This means, that iff the client somehow closes the connection we can and
+ *  must remove all traces of jobs resulting from that client in all lists.
  */
 
 namespace {
 
+using sockaddr_t = struct sockaddr;
+
 std::string pidFilePath;
 
-std::map<int, CompileServer *> fd2cs;
+class CompileServerManager {
+    using CSRef = std::reference_wrapper<CompileServer>;
+
+    std::list<CompileServer>               css_{};
+    std::unordered_map<int, CSRef>         by_fd_{};
+    std::unordered_map<std::string, CSRef> by_name_{};
+
+public:
+    CompileServer &
+    create(int fd, const sockaddr_t addr, const socklen_t len)
+    {
+        auto it = css_.emplace(std::end(css_), fd, addr, len);
+        by_fd_.emplace(fd, *it);
+
+        return *it;
+    }
+
+    void
+    setName(CompileServer & cs, const std::string & name)
+    {
+        cs.setNodeName(name);
+        by_name_.emplace(name, cs);
+    }
+
+    CompileServer *
+    byFd(const int fd)
+    {
+        auto it = by_fd_.find(fd);
+        return it != by_fd_.end() ? &it->second.get() : nullptr;
+    }
+
+    CompileServer *
+    byName(const std::string & name)
+    {
+        auto it = by_name_.find(name);
+        return it != by_name_.end() ? &it->second.get() : nullptr;
+    }
+};
+
+class MonitorManager {
+    std::list<CompileServer> css_{};
+
+public:
+    void
+    add(CompileServer & cs);
+
+    void
+    remove(CompileServer & cs);
+
+    void
+    notify(const Msg & m)
+    {
+        for (auto it = monitors.begin(); it != monitors.end(); ++it) {
+            /* If we can't send it, don't be clever, simply close this monitor. */
+            if (!(*it)->sendMsg(
+                    m,
+                    MsgChannel::
+                        SendNonBlocking /*| MsgChannel::SendBulkOnly*/)) {
+                trace() << "monitor is blocking... removing\n";
+                handle_end(*it);
+            }
+        }
+    }
+};
 
 std::atomic_flag exit_handler_called = ATOMIC_FLAG_INIT;
 std::atomic_bool
@@ -100,7 +166,6 @@ std::string  scheduler_interface = "";
 unsigned int scheduler_port = 8765;
 
 // A subset of connected_hosts representing the compiler servers
-std::list<CompileServer *>    css;
 std::list<CompileServer *>    monitors;
 std::list<CompileServer *>    controls;
 std::list<std::string>        block_css;
@@ -241,20 +306,6 @@ add_job_stats(Job * job, const JobDoneMsg & msg)
 
 bool
 handle_end(CompileServer * cs);
-
-void
-notify_monitors(const Msg & m)
-{
-    for (auto it = monitors.begin(); it != monitors.end(); ++it) {
-        /* If we can't send it, don't be clever, simply close this monitor.  */
-        if (!(*it)->sendMsg(
-                m,
-                MsgChannel::SendNonBlocking /*| MsgChannel::SendBulkOnly*/)) {
-            trace() << "monitor is blocking... removing\n";
-            handle_end(*it);
-        }
-    }
-}
 
 float
 server_speed(CompileServer * cs, Job * job, bool blockDebug)
@@ -628,7 +679,7 @@ envs_match(CompileServer * cs, const Job * job)
 }
 
 CompileServer *
-pick_server(Job * job)
+pick_server(CompileServerManager & cs_manager, Job & job)
 {
 #if DEBUG_LEVEL > 1
     trace() << "pick_server " << job->id() << " " << job->targetPlatform()
@@ -661,7 +712,7 @@ pick_server(Job * job)
 
     /* if the user wants to test/prefer one specific daemon, we look for that
      * one first */
-    if (!job->preferredHost().empty()) {
+    if (!job.preferredHost().empty()) {
         for (CompileServer * const cs : css) {
             if (cs->matches(job->preferredHost()) && cs->is_eligible_now(job)) {
 #if DEBUG_LEVEL > 1
@@ -1087,7 +1138,9 @@ empty_queue()
 }
 
 bool
-handle_login(CompileServer * cs, const LoginMsg & msg)
+handle_login(CompileServerManager & cs_manager,
+             CompileServer &        cs,
+             const LoginMsg &       msg)
 {
     std::ostream & dbg = trace();
 
@@ -1096,10 +1149,10 @@ handle_login(CompileServer * cs, const LoginMsg & msg)
     cs->setMaxJobs(msg.max_kids);
     cs->setNoRemote(msg.noremote);
 
-    if (msg.nodename.length()) {
-        cs->setNodeName(msg.nodename);
+    if (!msg.nodename.empty()) {
+        cs_manager.setName(*cs, msg.nodename);
     } else {
-        cs->setNodeName(cs->name);
+        cs_manager.setName(*cs, cs->name);
     }
 
     cs->setHostPlatform(msg.host_platform);
@@ -1376,14 +1429,14 @@ handle_blacklist_host_env(CompileServer * cs, const BlacklistHostEnvMsg & msg)
 
 // return false if some error occurred, leaves C open.  */
 bool
-try_login(CompileServer * cs, const Msg & msg)
+try_login(CompileServer & cs, const Msg & msg)
 {
     bool ret = ext::visit(ext::make_visitor(
-                              [cs](const LoginMsg & m) {
+                              [&cs](const LoginMsg & m) {
                                   cs->setType(CompileServer::DAEMON);
                                   return handle_login(cs, m);
                               },
-                              [cs](const MonLoginMsg & m) {
+                              [&cs](const MonLoginMsg & m) {
                                   cs->setType(CompileServer::MONITOR);
                                   handle_mon_login(cs, m);
                                   return true;
@@ -1396,7 +1449,7 @@ try_login(CompileServer * cs, const Msg & msg)
                           msg);
 
     if (ret) {
-        cs->setState(CompileServer::LOGGEDIN);
+        cs.setState(CompileServer::LOGGEDIN);
     } else {
         handle_end(cs);
     }
@@ -1405,36 +1458,37 @@ try_login(CompileServer * cs, const Msg & msg)
 }
 
 bool
-handle_end(CompileServer * toremove)
+handle_end(CompileServerManager & cs_manager,
+           MonitorManager &       mon_manager,
+           CompileServer &        to_remove)
 {
-    trace() << "Handle_end " << toremove << '\n';
+    trace() << "Handle_end " << to_remove << '\n';
 
-    switch (toremove->type()) {
-        case CompileServer::MONITOR:
-            assert(find(monitors.begin(), monitors.end(), toremove) !=
-                   monitors.end());
-            monitors.remove(toremove);
+    switch (to_remove.type()) {
+        case CompileServer::MONITOR: mon_manager.remove(to_remove);
 #if DEBUG_LEVEL > 1
-            trace() << "handle_end(moni) " << monitors.size() << '\n';
+            trace() << "handle_end(CompileServer::MONITOR) " << monitors.size()
+                    << '\n';
 #endif
             break;
         case CompileServer::DAEMON:
-            log_info() << "remove daemon " << toremove->nodeName() << '\n';
+            log_info() << "remove daemon " << to_remove.nodeName() << '\n';
 
-            notify_monitors(MonStatsMsg(toremove->hostId(), "State:Offline\n"));
+            mon_manager.notify(
+                MonStatsMsg(to_remove.hostId(), "State:Offline\n"));
 
             /* A daemon disconnected.  We must remove it from the css list,
                and we have to delete all jobs scheduled on that daemon.
             There might be still clients connected running on the machine on
             which the daemon died.  We expect that the daemon dying makes the
             client disconnect soon too.  */
-            css.remove(toremove);
+            css.remove(to_remove);
 
             /* Unfortunately the job_requests queues are also tagged based on
                the daemon, so we need to clean them up also.  */
 
             for (auto it = job_requests.begin(); it != job_requests.end();) {
-                if ((*it)->submitter == toremove) {
+                if ((*it)->submitter == to_remove) {
                     JobRequestsGroup * l = *it;
 
                     for (auto jit = l->l.begin(); jit != l->l.end(); ++jit) {
@@ -1460,13 +1514,14 @@ handle_end(CompileServer * toremove)
             for (auto mit = jobs.begin(); mit != jobs.end();) {
                 Job * job = mit->second;
 
-                if (job->server() == toremove || job->submitter() == toremove) {
+                if (job->server() == to_remove ||
+                    job->submitter() == to_remove) {
                     trace() << "STOP (DAEMON2) FOR " << mit->first << '\n';
                     notify_monitors(MonJobDoneMsg(JobDoneMsg(job->id(), 255)));
 
                     /* If this job is removed because the submitter is removed
                     also remove the job from the servers joblist.  */
-                    if (job->server() && job->server() != toremove) {
+                    if (job->server() && job->server() != to_remove) {
                         job->server()->removeJob(job);
                     }
 
@@ -1482,15 +1537,15 @@ handle_end(CompileServer * toremove)
             }
 
             for (CompileServer * const cs : css) {
-                cs->eraseCSFromBlacklist(toremove);
+                cs->eraseCSFromBlacklist(to_remove);
             }
 
             break;
         default: trace() << "remote end had UNKNOWN type?\n"; break;
     }
 
-    fd2cs.erase(toremove->fd);
-    delete toremove;
+    fd2cs.erase(to_remove.fd);
+    delete to_remove;
     return true;
 }
 
@@ -1730,6 +1785,8 @@ main(int argc, char * argv[])
     uid_t              user_uid;
     gid_t              user_gid;
     int                warn_icecc_user_errno = 0;
+
+    CompileServerManager cs_manager{};
 
     if (getuid() == 0) {
         struct passwd * pw = getpwnam("icecc");
@@ -2045,7 +2102,7 @@ main(int argc, char * argv[])
                 }
 
                 if (remote_fd >= 0) {
-                    CompileServer * cs = new CompileServer(
+                    CompileServer & cs = cs_manager.create(
                         remote_fd, (struct sockaddr *)&remote_addr, remote_len);
                     trace() << "accepted " << cs->name << '\n';
                     cs->last_talk = time(nullptr);
